@@ -1,15 +1,13 @@
 # Set of valid operators for @test setop
 const SETOP_VALID_OPS = (
     :(==),
-    :!=, :≠,
+    :!=, 
+    :≠,
     :⊆,
     :⊇,
     :⊊,
     :⊋,
-    :^, 
-    :issetequal,
-    :issubset, 
-    :isdisjoint,
+    :^,
 )
 
 """
@@ -92,16 +90,16 @@ function eval_test_setop(lhs, op, rhs, source)
     if !res
         data = IOBuffer()
 
-        if op === :^ || op === :isdisjoint # isdisjoint(a, b)
+        if op === :^ # isdisjoint(a, b)
             print(data, "LHS and RHS are not disjoint.")
             print_pretty_set(data, intersect(lhs, rhs), "in common")
 
-        elseif op === :(==) || op === :issetequal # a == b
+        elseif op === :(==) # a == b
             print(data, "LHS and RHS are not equal.")
             print_pretty_set(data, setdiff(rhs, lhs), "in RHS \\ LHS")
             print_pretty_set(data, setdiff(lhs, rhs), "in LHS \\ RHS")
 
-        elseif op === :⊆ || op === :issubset # a ⊆ b
+        elseif op === :⊆  # a ⊆ b
             print(data, "LHS is not a subset of RHS.")
             print_pretty_set(data, setdiff(lhs, rhs), "in LHS \\ RHS")
 
