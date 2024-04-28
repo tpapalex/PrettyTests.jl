@@ -79,11 +79,11 @@
 
         res = f([1,2,3], [3,2,1])
         @test res.value === false
-        @test res.data == "LHS and RHS are equal."
+        @test res.data == "Left and right sets are equal."
 
         res = f([1,1,1,2,1], [2,1])
         @test res.value === false
-        @test res.data == "LHS and RHS are equal."
+        @test res.data == "Left and right sets are equal."
     end
 
     @testset "eval_test_setop: ≠" begin
@@ -99,11 +99,11 @@
 
         res = f([1,2,3], [3,2,1])
         @test res.value === false
-        @test res.data == "LHS and RHS are equal."
+        @test res.data == "Left and right sets are equal."
 
         res = f([1,1,1,2,1], [2,1])
         @test res.value === false
-        @test res.data == "LHS and RHS are equal."
+        @test res.data == "Left and right sets are equal."
     end
 
     @testset "eval_test_setop: ==" begin
@@ -119,19 +119,19 @@
 
         res = f([1,2,3], [1,2])
         @test res.value === false
-        @test startswith(res.data, "LHS and RHS are not equal.")
-        @test occursin("1 element  in LHS \\ RHS: [3]", res.data)
+        @test startswith(res.data, "Left and right sets are not equal.")
+        @test occursin("1 element  in left\\right: [3]", res.data)
 
         res = f(1:5, 2:6)
         @test res.value === false
-        @test startswith(res.data, "LHS and RHS are not equal.")
-        @test occursin("1 element  in LHS \\ RHS: [1]", res.data)
-        @test occursin("1 element  in RHS \\ LHS: [6]", res.data)
+        @test startswith(res.data, "Left and right sets are not equal.")
+        @test occursin("1 element  in left\\right: [1]", res.data)
+        @test occursin("1 element  in right\\left: [6]", res.data)
 
         res = f(4:6, 1:9)
         @test res.value === false
-        @test startswith(res.data, "LHS and RHS are not equal.")
-        @test occursin(r"6 elements in RHS \\ LHS: \[(\d, ){5}\.{3}\]", res.data)
+        @test startswith(res.data, "Left and right sets are not equal.")
+        @test occursin(r"6 elements in right\\left: \[(\d, ){5}\.{3}\]", res.data)
     end
 
     @testset "eval_test_setop: ⊆" begin
@@ -151,13 +151,13 @@
 
         res = f([1,2,3], [1,2])
         @test res.value === false
-        @test startswith(res.data, "LHS is not a subset of RHS.")
-        @test occursin("1 element  in LHS \\ RHS: [3]", res.data)
+        @test startswith(res.data, "Left set is not a subset of right set.")
+        @test occursin("1 element  in left\\right: [3]", res.data)
 
         res = f(1:4, [1,2])
         @test res.value === false
-        @test startswith(res.data, "LHS is not a subset of RHS.")
-        @test occursin(r"2 elements in LHS \\ RHS: \[(3|4), (3|4)\]", res.data)
+        @test startswith(res.data, "Left set is not a subset of right set.")
+        @test occursin(r"2 elements in left\\right: \[(3|4), (3|4)\]", res.data)
     end
 
     @testset "eval_test_setop: ⊇" begin
@@ -177,13 +177,13 @@
 
         res = f([1,2], [1,2,3])
         @test res.value === false
-        @test startswith(res.data, "LHS is not a superset of RHS.")
-        @test occursin("1 element  in RHS \\ LHS: [3]", res.data)
+        @test startswith(res.data, "Left set is not a superset of right set.")
+        @test occursin("1 element  in right\\left: [3]", res.data)
 
         res = f([1,2], 1:4)
         @test res.value === false
-        @test startswith(res.data, "LHS is not a superset of RHS.")
-        @test occursin(r"2 elements in RHS \\ LHS: \[(3|4), (3|4)\]", res.data)
+        @test startswith(res.data, "Left set is not a superset of right set.")
+        @test occursin(r"2 elements in right\\left: \[(3|4), (3|4)\]", res.data)
     end
 
     @testset "eval_test_setop: ⊊" begin
@@ -197,19 +197,19 @@
         @test res.value === true
         @test res.data === nothing
 
-        res = f([1,2,3], [1,2,3])
+        res = f([1,2,2,3], [1,2,3,1])
         @test res.value === false
-        @test res.data == "LHS is not a proper subset of RHS, they are equal."
+        @test res.data == "Left and right sets are equal, left is not a proper subset."
 
         res = f([1,2,3], [1,2])
         @test res.value === false
-        @test startswith(res.data, "LHS is not a proper subset of RHS.")
-        @test occursin("1 element  in LHS \\ RHS: [3]", res.data)
+        @test startswith(res.data, "Left set is not a proper subset of right set.")
+        @test occursin("1 element  in left\\right: [3]", res.data)
 
         res = f([1,2,3,1,1,4], [1,2])
         @test res.value === false
-        @test startswith(res.data, "LHS is not a proper subset of RHS.")
-        @test occursin(r"2 elements in LHS \\ RHS: \[(3|4), (3|4)\]", res.data)
+        @test startswith(res.data, "Left set is not a proper subset of right set.")
+        @test occursin(r"2 elements in left\\right: \[(3|4), (3|4)\]", res.data)
     end
 
     @testset "eval_test_setop: ⊋" begin
@@ -225,17 +225,17 @@
 
         res = f([1,2,3], [1,2,3])
         @test res.value === false
-        @test res.data == "LHS is not a proper superset of RHS, they are equal."
+        @test res.data == "Left and right sets are equal, left is not a proper superset."
 
         res = f([1,2], [1,2,3])
         @test res.value === false
-        @test startswith(res.data, "LHS is not a proper superset of RHS.")
-        @test occursin("1 element  in RHS \\ LHS: [3]", res.data)
+        @test startswith(res.data, "Left set is not a proper superset of right set.")
+        @test occursin("1 element  in right\\left: [3]", res.data)
 
         res = f([1,2], [1,2,3,1,1,4])
         @test res.value === false
-        @test startswith(res.data, "LHS is not a proper superset of RHS.")
-        @test occursin(r"2 elements in RHS \\ LHS: \[(3|4), (3|4)\]", res.data)
+        @test startswith(res.data, "Left set is not a proper superset of right set.")
+        @test occursin(r"2 elements in right\\left: \[(3|4), (3|4)\]", res.data)
     end
     
     @testset "eval_test_setop: ^" begin
@@ -251,12 +251,12 @@
 
         res = f([1,2,3], [3,4])
         @test res.value === false
-        @test startswith(res.data, "LHS and RHS are not disjoint.")
+        @test startswith(res.data, "Left and right sets are not disjoint.")
         @test occursin("1 element  in common: [3]", res.data)
 
         res = f(1:5, 4:8)
         @test res.value === false
-        @test startswith(res.data, "LHS and RHS are not disjoint.")
+        @test startswith(res.data, "Left and right sets are not disjoint.")
         @test occursin(r"2 elements in common: \[(4|5), (4|5)\]", res.data)
     end
 

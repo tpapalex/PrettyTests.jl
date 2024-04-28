@@ -74,7 +74,7 @@ function eval_test_setop(lhs, op, rhs, source)
     # Take care of inequality first, which has simple messaging:
     if op === :(!=) || op === :≠ 
         res = lhs != rhs
-        data = res ? nothing : "LHS and RHS are equal."
+        data = res ? nothing : "Left and right sets are equal."
         return Returned(res, data, source)
     end
 
@@ -91,35 +91,35 @@ function eval_test_setop(lhs, op, rhs, source)
         data = IOBuffer()
 
         if op === :^ # isdisjoint(a, b)
-            print(data, "LHS and RHS are not disjoint.")
+            print(data, "Left and right sets are not disjoint.")
             print_pretty_set(data, intersect(lhs, rhs), "in common")
 
         elseif op === :(==) # a == b
-            print(data, "LHS and RHS are not equal.")
-            print_pretty_set(data, setdiff(rhs, lhs), "in RHS \\ LHS")
-            print_pretty_set(data, setdiff(lhs, rhs), "in LHS \\ RHS")
+            print(data, "Left and right sets are not equal.")
+            print_pretty_set(data, setdiff(rhs, lhs), "in right\\left")
+            print_pretty_set(data, setdiff(lhs, rhs), "in left\\right")
 
         elseif op === :⊆  # a ⊆ b
-            print(data, "LHS is not a subset of RHS.")
-            print_pretty_set(data, setdiff(lhs, rhs), "in LHS \\ RHS")
+            print(data, "Left set is not a subset of right set.")
+            print_pretty_set(data, setdiff(lhs, rhs), "in left\\right")
 
         elseif op === :⊊ && lhs == rhs # a ⊊ b (equal case)
-            print(data, "LHS is not a proper subset of RHS, they are equal.")
+            print(data, "Left and right sets are equal, left is not a proper subset.")
 
         elseif op === :⊊# a ⊊ b (missing elements in RHS)
-            print(data, "LHS is not a proper subset of RHS.")
-            print_pretty_set(data, setdiff(lhs, rhs), "in LHS \\ RHS")
+            print(data, "Left set is not a proper subset of right set.")
+            print_pretty_set(data, setdiff(lhs, rhs), "in left\\right")
 
         elseif op === :⊇ # a ⊇ b
-            print(data, "LHS is not a superset of RHS.")
-            print_pretty_set(data, setdiff(rhs, lhs), "in RHS \\ LHS")
+            print(data, "Left set is not a superset of right set.")
+            print_pretty_set(data, setdiff(rhs, lhs), "in right\\left")
 
         elseif op === :⊋ && lhs == rhs # a ⊋ b (equal case)
-            print(data, "LHS is not a proper superset of RHS, they are equal.")
+            print(data, "Left and right sets are equal, left is not a proper superset.")
 
         elseif op === :⊋ # a ⊋ b (missing elements in LHS)
-            print(data, "LHS is not a proper superset of RHS.")
-            print_pretty_set(data, setdiff(rhs, lhs), "in RHS \\ LHS")
+            print(data, "Left set is not a proper superset of right set.")
+            print_pretty_set(data, setdiff(rhs, lhs), "in right\\left")
 
         else
             error("Unsupported operator $op.")
