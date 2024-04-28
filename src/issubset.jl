@@ -21,12 +21,12 @@ function _process_test_expr_issubset!(ex, kws...)
     if isa(ex, Expr) && ex.head == :call && ex.args[1] == :(⊆) && length(ex.args) == 3
         # pass
     else
-        throw(_testerror(:test_issubset, ex, kws, "Must be of the form @test_issubset a ⊆ b"))
+        throw(MacroCallError(:test_issubset, ex, kws, "Must be of the form @test_issubset a ⊆ b"))
     end
 
     # Throw error if any keyword arguments
     if length(kws) > 0
-        throw(_testerror(:test_issubset, ex, kws, "No keyword arguments allowed."))
+        throw(MacroCallError(:test_issubset, ex, kws, "No keyword arguments allowed."))
     end
     return ex
 end

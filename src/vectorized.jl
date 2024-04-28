@@ -72,16 +72,16 @@ function _process_test_expr_vectorized!(ex, kws...)
     elseif isa(ex, Expr) && length(ex.args) == 2 # a && b (logical has a different head)
         op = ex.head
     else
-        throw(_testerror(:test_vectorized, ex, kws, _VECTORIZED_ERROR))
+        throw(MacroCallError(:test_vectorized, ex, kws, _VECTORIZED_ERROR))
     end
 
     # If valid format of expression, check that operator is supported.
     if op ∈ _VECTORIZED_VALID_OPS
         # pass
     elseif op ∈ _UNVECTORIZED_VALID_OPS
-        throw(_testerror(:test_vectorized, ex, kws, "Requires a vectorized operation; did you mean to use $(Symbol(:., op)) instead?"))
+        throw(MacroCallError(:test_vectorized, ex, kws, "Requires a vectorized operation; did you mean to use $(Symbol(:., op)) instead?"))
     else
-        throw(_testerror(:test_vectorized, ex, kws, _VECTORIZED_ERROR))
+        throw(MacroCallError(:test_vectorized, ex, kws, _VECTORIZED_ERROR))
     end
 
     # Add keyword arguments to expression. This is primary to support atol and rtol for .≈/≉.

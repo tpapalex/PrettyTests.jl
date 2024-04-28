@@ -1,18 +1,24 @@
-# Create a custom error for invalid test macro calls. `addl` is appended to the error message.
-function _testerror(testtype::Symbol, ex, kws, addl=nothing)
+# Internal error formatting for invalid test macro calls. Returns an ErrorException to be
+# thrown locally.
+function MacroCallError(testtype::Symbol, ex, kws, addl=nothing)
     return ErrorException(
         "invalid test macro call: \
         @$(testtype) \
-        $(ex) \
-        $(length(kws) == 0 ? "" : join(kws," "))\
+        $(ex)\
+        $(length(kws) == 0 ? "" : " " * join(kws," "))\
         $(addl === nothing ? "" : "\n$(addl)")\
         "
     )
 end
 
-# Extract what type of test to do based on `skip` and `broken` keywords. Returns the 
-# filtered keyword arguments and the test `action` to take (:skip, :broken, or :do)
-function _extract_skip_broken_kw(kws...)
+
+# Internal function that processes test macro `kws...` expressions to pick out `skip` 
+# and `broken` keywords. Returns `kws` with `broken`/`skip` arguments removed, and a 
+# `modifier::Symbol` ∈ (:do, :skip, :broken) indicating how the test should be 
+# handled.
+function extract_test_modifier(kws...)
+    # Based on code in Test.@test macro.
+
     # Collect the broken/skip keywords and remove them from the rest of keywords
     broken = [kw.args[2] for kw in kws if kw.args[1] === :broken]
     skip = [kw.args[2] for kw in kws if kw.args[1] === :skip]
@@ -28,26 +34,27 @@ function _extract_skip_broken_kw(kws...)
         error("invalid test macro call: cannot set both skip and broken keywords")
     end
 
-    # If either exists and is true, pick it as the test action, otherwise default :do
+    # Determine the test modifier based on the values:
     if length(skip) > 0 && skip[1]
-        action = :skip
+        modifier = :skip
     elseif length(broken) > 0 && broken[1]
-        action = :broken
+        modifier = :broken
     else
-        action = :do
+        modifier = :do
     end
 
-    return kws, action
+    return kws, modifier
 end
 
-# For the case where `broken=true`, returns an "unexpected pass" test is `result` is Test.Pass
-# or a "broken" test if `result` is Test.Fail.
-function _get_broken_result(result, orig_expr, source::LineNumberNode=LineNumberNode(1))
-    if result isa Test.Pass
-        return Test.Error(:test_unbroken, orig_expr, nothing, nothing, source)
-    elseif result isa Test.Fail
-        return Test.Broken(:test, orig_expr)
-    else
-        return result
-    end
-end
+# # Internal function called on a test Result when performing a `broken=true` test. If 
+# # `result` is Pass, returns a Error(:test_unbroken) instead. If the result is Fail,
+# # returns a Broken(:test). Otherwise, returns the result as is.
+# function do_broken_test(result::ExecutionResult)
+#     if result isa Test.Pass
+#         return Test.Error(:test_unbroken, result.orig_expr, result.value, nothing, result.source)
+#     elseif result isa Test.Fail
+#         return Test.Broken(:test, orig_expr)
+#     else
+#         return result
+#     end
+# end
