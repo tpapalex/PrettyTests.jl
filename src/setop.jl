@@ -155,8 +155,24 @@ function get_test_setop_result(ex, source)
 end
 
 macro test_setop(ex, kws...)
-    # Extract `broken`/`skip` keywords into modifier
-    kws, modifier = extract_test_modifier(kws...)
+    # Based on code in Test.@test macro.
+    # Collect the broken/skip keywords and remove them from the rest of keywords
+    broken = [kw.args[2] for kw in kws if kw.args[1] === :broken]
+    skip = [kw.args[2] for kw in kws if kw.args[1] === :skip]
+    kws = filter(kw -> kw.args[1] ∉ (:skip, :broken), kws)
+
+    # Validation of broken/skip keywords
+    for (kw, name) in ((broken, :broken), (skip, :skip))
+        if length(kw) > 1
+            error("invalid test macro call: cannot set $(name) keyword multiple times")
+        end
+    end
+    if length(skip) > 0 && length(broken) > 0
+        error("invalid test macro call: cannot set both skip and broken keywords")
+    end
+    if length(kws) > 0
+        error("invalid test macro call: keyword arguments not supported")
+    end
 
     # Validate and process the test expression
     test_setop_expr!(ex, kws...)
@@ -166,10 +182,10 @@ macro test_setop(ex, kws...)
     ex = Expr(:inert, ex)
 
     result = quote
-        if $(modifier == :skip)
+        if $(length(skip) > 0 && esc(skip[1]))
             record(get_testset(), Broken(:skipped, $ex))
         else
-            let _do = $(modifier == :broken) ? do_broken_test : do_test
+            let _do = $(length(broken) > 0 && esc(broken[1])) ? do_broken_test : do_test
                 _do($result, $ex)
             end
         end
