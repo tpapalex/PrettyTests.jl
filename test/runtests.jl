@@ -1,7 +1,7 @@
 using TestMacroExtensions
 using Test
 
-const TME = TestMacroExtensions
+const TM = TestMacroExtensions
 
 @testset "TestMacroExtensions.jl" begin
     include("utilities.jl")

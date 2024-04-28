@@ -2,72 +2,72 @@
 
     @testset "test_setop_expr!(ex, kws...)" begin
         # Valid simple expressions
-        @test TME.test_setop_expr!(:(a == b)) == :(a == b)
-        @test TME.test_setop_expr!(:(a ⊆ b)) == :(a ⊆ b)
-        @test TME.test_setop_expr!(:(a ⊇ b)) == :(a ⊇ b)
-        @test TME.test_setop_expr!(:(a ⊊ b)) == :(a ⊊ b)
-        @test TME.test_setop_expr!(:(a ⊋ b)) == :(a ⊋ b)
-        @test TME.test_setop_expr!(:(a != b)) == :(a != b)
-        @test TME.test_setop_expr!(:(a ≠ b)) == :(a ≠ b)
-        @test TME.test_setop_expr!(:(a ^ b)) == :(a ^ b)
+        @test TM.test_setop_expr!(:(a == b)) == :(a == b)
+        @test TM.test_setop_expr!(:(a ⊆ b)) == :(a ⊆ b)
+        @test TM.test_setop_expr!(:(a ⊇ b)) == :(a ⊇ b)
+        @test TM.test_setop_expr!(:(a ⊊ b)) == :(a ⊊ b)
+        @test TM.test_setop_expr!(:(a ⊋ b)) == :(a ⊋ b)
+        @test TM.test_setop_expr!(:(a != b)) == :(a != b)
+        @test TM.test_setop_expr!(:(a ≠ b)) == :(a ≠ b)
+        @test TM.test_setop_expr!(:(a ^ b)) == :(a ^ b)
 
         # Expressions with more complicated sets
-        @test TME.test_setop_expr!(:(a == [1,2])) == :(a == [1,2])
-        @test TME.test_setop_expr!(:(1:2 == [1,2,2])) == :(1:2 == [1,2,2])
-        @test TME.test_setop_expr!(:(1:2:5 == Set(3))) == :(1:2:5 == Set(3))
-        @test TME.test_setop_expr!(:([1 3 5] == [1; 2])) == (:([1 3 5] == [1; 2]))
+        @test TM.test_setop_expr!(:(a == [1,2])) == :(a == [1,2])
+        @test TM.test_setop_expr!(:(1:2 == [1,2,2])) == :(1:2 == [1,2,2])
+        @test TM.test_setop_expr!(:(1:2:5 == Set(3))) == :(1:2:5 == Set(3))
+        @test TM.test_setop_expr!(:([1 3 5] == [1; 2])) == (:([1 3 5] == [1; 2]))
 
         # Invalid expression, comparison
-        @test_throws r"Comparisons with more than 2" TME.test_setop_expr!(:(a == b ⊆ c))
-        @test_throws r"Comparisons with more than 2" TME.test_setop_expr!(:(a ⊇ b ⊂ c))
+        @test_throws r"Comparisons with more than 2" TM.test_setop_expr!(:(a == b ⊆ c))
+        @test_throws r"Comparisons with more than 2" TM.test_setop_expr!(:(a ⊇ b ⊂ c))
 
         # Invalid expression, invalid head
-        @test_throws r"Must be of the form" TME.test_setop_expr!(:(a = b))
-        @test_throws r"Must be of the form" TME.test_setop_expr!(:(a && b))
+        @test_throws r"Must be of the form" TM.test_setop_expr!(:(a = b))
+        @test_throws r"Must be of the form" TM.test_setop_expr!(:(a && b))
 
         # Invalid expression, too many arguments
-        @test_throws r"Must be of the form" TME.test_setop_expr!(:(f(a, b, c)))
+        @test_throws r"Must be of the form" TM.test_setop_expr!(:(f(a, b, c)))
 
         # Invalid expression, unsupported operator
-        @test_throws r"Unsupported set comparison operator ≈" TME.test_setop_expr!(:(a ≈ b))
-        @test_throws r"Unsupported set comparison operator >=" TME.test_setop_expr!(:(a >= b))
-        @test_throws r"Unsupported set comparison operator f" TME.test_setop_expr!(:(f(a, b)))
+        @test_throws r"Unsupported set comparison operator ≈" TM.test_setop_expr!(:(a ≈ b))
+        @test_throws r"Unsupported set comparison operator >=" TM.test_setop_expr!(:(a >= b))
+        @test_throws r"Unsupported set comparison operator f" TM.test_setop_expr!(:(f(a, b)))
 
         # Unsupported keyword arguments
-        @test_throws r"Keyword.* not supported" TME.test_setop_expr!(:(a == b), :(c=1))
-        @test_throws r"Keyword.* not supported" TME.test_setop_expr!(:(a == b), :(c=1), :(d=2))
+        @test_throws r"Keyword.* not supported" TM.test_setop_expr!(:(a == b), :(c=1))
+        @test_throws r"Keyword.* not supported" TM.test_setop_expr!(:(a == b), :(c=1), :(d=2))
     end
     
     @testset "print_pretty_set" begin
         # Test with vectors, to avoid unordered set differences
-        @test sprint(TME.print_pretty_set, [1], "x") == 
+        @test sprint(TM.print_pretty_set, [1], "x") == 
             "\n              1 element  x: [1]"
-        @test sprint(TME.print_pretty_set, [:a], "x") == 
+        @test sprint(TM.print_pretty_set, [:a], "x") == 
             "\n              1 element  x: [:a]"
 
-        @test sprint(TME.print_pretty_set, [1,2,3], "x") == 
+        @test sprint(TM.print_pretty_set, [1,2,3], "x") == 
             "\n              3 elements x: [1, 2, 3]"
-        @test sprint(TME.print_pretty_set, [1,2,3], "x", 10) == 
+        @test sprint(TM.print_pretty_set, [1,2,3], "x", 10) == 
             "\n              3 elements x: [1, 2, 3]"
-        @test sprint(TME.print_pretty_set, 1:6, "x", 3) == 
+        @test sprint(TM.print_pretty_set, 1:6, "x", 3) == 
             "\n              6 elements x: [1, 2, 3, ...]"
-        @test sprint(TME.print_pretty_set, [:a,:b,:c], "x", 3) == 
+        @test sprint(TM.print_pretty_set, [:a,:b,:c], "x", 3) == 
             "\n              3 elements x: [:a, :b, :c]"
-        @test sprint(TME.print_pretty_set, [:a => 3], "x") == 
+        @test sprint(TM.print_pretty_set, [:a => 3], "x") == 
             "\n              1 element  x: [:a => 3]"
-        @test sprint(TME.print_pretty_set, [:a => 3, :b => 1], "x") == 
+        @test sprint(TM.print_pretty_set, [:a => 3, :b => 1], "x") == 
             "\n              2 elements x: [:a => 3, :b => 1]"
 
         # Test with sets
-        val = sprint(TME.print_pretty_set, Set(1:9), "x", 10)
+        val = sprint(TM.print_pretty_set, Set(1:9), "x", 10)
         @test occursin(r"9 elements x: \[(\d, ){8}\d\]", val)
 
-        val = sprint(TME.print_pretty_set, Set(1:9), "x", 3)
+        val = sprint(TM.print_pretty_set, Set(1:9), "x", 3)
         @test occursin(r"9 elements x: \[(\d, ){3}\.{3}\]", val)
     end
 
     @testset "eval_test_setop: !=" begin
-        f = (lhs, rhs) -> TME.eval_test_setop(lhs, :!=, rhs, LineNumberNode(1))
+        f = (lhs, rhs) -> TM.eval_test_setop(lhs, :!=, rhs, LineNumberNode(1))
 
         res = f([1,2,3], [1,2])
         @test res.value === true
@@ -87,7 +87,7 @@
     end
 
     @testset "eval_test_setop: ≠" begin
-        f = (lhs, rhs) -> TME.eval_test_setop(lhs, :≠, rhs, LineNumberNode(1))
+        f = (lhs, rhs) -> TM.eval_test_setop(lhs, :≠, rhs, LineNumberNode(1))
 
         res = f([1,2,3], [1,2])
         @test res.value === true
@@ -107,7 +107,7 @@
     end
 
     @testset "eval_test_setop: ==" begin
-        f = (lhs, rhs) -> TME.eval_test_setop(lhs, :(==), rhs, LineNumberNode(1))
+        f = (lhs, rhs) -> TM.eval_test_setop(lhs, :(==), rhs, LineNumberNode(1))
 
         res = f([1,2,3], [1,2,3])
         @test res.value === true
@@ -135,7 +135,7 @@
     end
 
     @testset "eval_test_setop: ⊆" begin
-        f = (lhs, rhs) -> TME.eval_test_setop(lhs, :⊆, rhs, LineNumberNode(1))
+        f = (lhs, rhs) -> TM.eval_test_setop(lhs, :⊆, rhs, LineNumberNode(1))
 
         res = f([1,2,3], [1,2,3])
         @test res.value === true
@@ -161,7 +161,7 @@
     end
 
     @testset "eval_test_setop: ⊇" begin
-        f = (lhs, rhs) -> TME.eval_test_setop(lhs, :⊇, rhs, LineNumberNode(1))
+        f = (lhs, rhs) -> TM.eval_test_setop(lhs, :⊇, rhs, LineNumberNode(1))
 
         res = f([1,2,3], [1,2,3])
         @test res.value === true
@@ -187,7 +187,7 @@
     end
 
     @testset "eval_test_setop: ⊊" begin
-        f = (lhs, rhs) -> TME.eval_test_setop(lhs, :⊊, rhs, LineNumberNode(1))
+        f = (lhs, rhs) -> TM.eval_test_setop(lhs, :⊊, rhs, LineNumberNode(1))
 
         res = f([1,2], [1,2,3])
         @test res.value === true
@@ -213,7 +213,7 @@
     end
 
     @testset "eval_test_setop: ⊋" begin
-        f = (lhs, rhs) -> TME.eval_test_setop(lhs, :⊋, rhs, LineNumberNode(1))
+        f = (lhs, rhs) -> TM.eval_test_setop(lhs, :⊋, rhs, LineNumberNode(1))
 
         res = f([1,2,3], [1,2])
         @test res.value === true
@@ -239,7 +239,7 @@
     end
     
     @testset "eval_test_setop: ^" begin
-        f = (lhs, rhs) -> TME.eval_test_setop(lhs, :^, rhs, LineNumberNode(1))
+        f = (lhs, rhs) -> TM.eval_test_setop(lhs, :^, rhs, LineNumberNode(1))
 
         res = f([1,2,3], [4,5])
         @test res.value === true
