@@ -6,9 +6,7 @@
         @test TME.test_setop_expr!(:(a ⊆ b)) == :(a ⊆ b)
         @test TME.test_setop_expr!(:(a ⊇ b)) == :(a ⊇ b)
         @test TME.test_setop_expr!(:(a ⊊ b)) == :(a ⊊ b)
-        @test TME.test_setop_expr!(:(a ⊂ b)) == :(a ⊂ b)
         @test TME.test_setop_expr!(:(a ⊋ b)) == :(a ⊋ b)
-        @test TME.test_setop_expr!(:(a ⊃ b)) == :(a ⊃ b)
         @test TME.test_setop_expr!(:(a != b)) == :(a != b)
         @test TME.test_setop_expr!(:(a ≠ b)) == :(a ≠ b)
         @test TME.test_setop_expr!(:(a ^ b)) == :(a ^ b)
@@ -271,33 +269,6 @@
         @test occursin(r"2 elements in LHS \\ RHS: \[(3|4), (3|4)\]", res.data)
     end
 
-
-    @testset "eval_test_setop: ⊂" begin
-        f = (lhs, rhs) -> TME.eval_test_setop(lhs, :⊂, rhs, LineNumberNode(1))
-
-        res = f([1,2], [1,2,3])
-        @test res.value === true
-        @test res.data === nothing
-
-        res = f(1:5, 1:10)
-        @test res.value === true
-        @test res.data === nothing
-
-        res = f([1,2,3], [1,2,3])
-        @test res.value === false
-        @test res.data == "LHS is not a proper subset of RHS, they are equal."
-
-        res = f([1,2,3], [1,2])
-        @test res.value === false
-        @test startswith(res.data, "LHS is not a proper subset of RHS.")
-        @test occursin("1 element  in LHS \\ RHS: [3]", res.data)
-
-        res = f([1,2,3,1,1,4], [1,2])
-        @test res.value === false
-        @test startswith(res.data, "LHS is not a proper subset of RHS.")
-        @test occursin(r"2 elements in LHS \\ RHS: \[(3|4), (3|4)\]", res.data)
-    end
-
     @testset "eval_test_setop: ⊋" begin
         f = (lhs, rhs) -> TME.eval_test_setop(lhs, :⊋, rhs, LineNumberNode(1))
 
@@ -323,33 +294,7 @@
         @test startswith(res.data, "LHS is not a proper superset of RHS.")
         @test occursin(r"2 elements in RHS \\ LHS: \[(3|4), (3|4)\]", res.data)
     end
-
-    @testset "eval_test_setop: ⊃" begin
-        f = (lhs, rhs) -> TME.eval_test_setop(lhs, :⊃, rhs, LineNumberNode(1))
-
-        res = f([1,2,3], [1,2])
-        @test res.value === true
-        @test res.data === nothing
-
-        res = f(1:10, 1:5)
-        @test res.value === true
-        @test res.data === nothing
-
-        res = f([1,2,3], [1,2,3])
-        @test res.value === false
-        @test res.data == "LHS is not a proper superset of RHS, they are equal."
-
-        res = f([1,2], [1,2,3])
-        @test res.value === false
-        @test startswith(res.data, "LHS is not a proper superset of RHS.")
-        @test occursin("1 element  in RHS \\ LHS: [3]", res.data)
-
-        res = f([1,2], [1,2,3,1,1,4])
-        @test res.value === false
-        @test startswith(res.data, "LHS is not a proper superset of RHS.")
-        @test occursin(r"2 elements in RHS \\ LHS: \[(3|4), (3|4)\]", res.data)
-    end
-
+    
     @testset "eval_test_setop: ^" begin
         f = (lhs, rhs) -> TME.eval_test_setop(lhs, :^, rhs, LineNumberNode(1))
 

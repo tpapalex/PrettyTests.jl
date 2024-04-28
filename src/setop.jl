@@ -4,8 +4,8 @@ const SETOP_VALID_OPS = (
     :!=, :≠,
     :⊆,
     :⊇,
-    :⊊, :⊂,
-    :⊋, :⊃,
+    :⊊,
+    :⊋,
     :^, 
     :issetequal,
     :issubset, 
@@ -83,10 +83,6 @@ function eval_test_setop(lhs, op, rhs, source)
     # For other ops, we can perform the operation to get the result `value`
     if op === :^
         res = isdisjoint(lhs, rhs)
-    elseif op === :⊂
-        res = lhs ⊊ rhs
-    elseif op === :⊃
-        res = lhs ⊋ rhs
     else
         res = eval(op)(lhs, rhs)
     end
@@ -109,10 +105,10 @@ function eval_test_setop(lhs, op, rhs, source)
             print(data, "LHS is not a subset of RHS.")
             print_pretty_set(data, setdiff(lhs, rhs), "in LHS \\ RHS")
 
-        elseif (op === :⊊ || op === :⊂) && lhs == rhs # a ⊊ b (equal case)
+        elseif op === :⊊ && lhs == rhs # a ⊊ b (equal case)
             print(data, "LHS is not a proper subset of RHS, they are equal.")
 
-        elseif op === :⊊ || op === :⊂ # a ⊊ b (missing elements in RHS)
+        elseif op === :⊊# a ⊊ b (missing elements in RHS)
             print(data, "LHS is not a proper subset of RHS.")
             print_pretty_set(data, setdiff(lhs, rhs), "in LHS \\ RHS")
 
@@ -120,10 +116,10 @@ function eval_test_setop(lhs, op, rhs, source)
             print(data, "LHS is not a superset of RHS.")
             print_pretty_set(data, setdiff(rhs, lhs), "in RHS \\ LHS")
 
-        elseif (op === :⊋ || op === :⊃) && lhs == rhs # a ⊋ b (equal case)
+        elseif op === :⊋ && lhs == rhs # a ⊋ b (equal case)
             print(data, "LHS is not a proper superset of RHS, they are equal.")
 
-        elseif op === :⊋ || op === :⊃ # a ⊋ b (missing elements in LHS)
+        elseif op === :⊋ # a ⊋ b (missing elements in LHS)
             print(data, "LHS is not a proper superset of RHS.")
             print_pretty_set(data, setdiff(rhs, lhs), "in RHS \\ LHS")
 
