@@ -16,34 +16,29 @@ const SETOP_VALID_OPS = (
 Preprocesses test_setop expressions to validate that the operator is valid and the 
 expression is well-formed. 
 """
-function test_setop_expr!(ex::Expr, kws::Expr...)
+function test_setop_expr!(ex, kws...)
 
-    if ex.head === :comparison 
-        # Do not support a == b ⊆ c
-        throw(MacroCallError(:test_setop, ex, (), 
-            "Comparisons with more than 2 sets not supported."
-        ))
-    elseif ex.head === :||
-        # Support || as alias for isdisjoint(a, b)
-    elseif ex.head !== :call || length(ex.args) > 3
-        # Only support a <op> b
-        throw(MacroCallError(:test_setop, ex, (), 
-            "Must be of the form @test_setop a <op> b\
-            where <op> is one of $(join(SETOP_VALID_OPS, ", "))"
-        ))
-    elseif ex.args[1] ∉ SETOP_VALID_OPS
-        # Invalid operator
-        throw(MacroCallError(:test_setop, ex, (), 
-            "Unsupported set comparison operator $(ex.args[1]). \
-            Must be one of $(join(SETOP_VALID_OPS, ", "))"
-        ))
+    if isa(ex, Expr)
+        if ex.head === :comparison 
+            # Do not support a == b ⊆ c
+            error("invalid test macro call: does not support :comparison expressions")
+        elseif ex.head === :||
+            # Support a || b as alias for isdisjoint(a, b)
+            # pass
+        elseif ex.head !== :call || length(ex.args) > 3
+            # Only support a <op> b
+            error("invalid test macro call: @test_setop $(ex)")
+        elseif ex.args[1] ∉ SETOP_VALID_OPS
+            # Invalid operator
+            error("invalid test macro call: unsupported set operator $(ex.args[1])")
+        end
+    else
+        error("invalid test macro call: @test_setop $(ex)")
     end
 
-    # Do not support keyword arguments
+    # No keyword arguments
     if length(kws) > 0
-        throw(MacroCallError(:test_setop, ex, kws, 
-            "Keyword arguments not supported."
-        ))
+        error("invalid test macro call: unsupported keyword arguments $(join(kws, " "))")
     end
 
     return ex

@@ -16,26 +16,27 @@
         @test TM.test_setop_expr!(:(1:2 == [1,2,2])) == :(1:2 == [1,2,2])
         @test TM.test_setop_expr!(:(1:2:5 == Set(3))) == :(1:2:5 == Set(3))
         @test TM.test_setop_expr!(:([1 3 5] == [1; 2])) == (:([1 3 5] == [1; 2]))
+        @test TM.test_setop_expr!(:(1:5 == 6:10)) == (:(1:5 == 6:10))
 
         # Invalid expression, comparison
-        @test_throws r"Comparisons with more than 2" TM.test_setop_expr!(:(a == b ⊆ c))
-        @test_throws r"Comparisons with more than 2" TM.test_setop_expr!(:(a ⊇ b ⊂ c))
+        @test_throws r"does not support :comparison" TM.test_setop_expr!(:(a == b ⊆ c))
+        @test_throws r"does not support :comparison" TM.test_setop_expr!(:(a ⊇ b ⊂ c))
 
         # Invalid expression, invalid head
-        @test_throws r"Must be of the form" TM.test_setop_expr!(:(a = b))
-        @test_throws r"Must be of the form" TM.test_setop_expr!(:(a && b))
+        @test_throws r"invalid .* @test_setop a = b" TM.test_setop_expr!(:(a = b))
+        @test_throws r"invalid .* @test_setop a && b" TM.test_setop_expr!(:(a && b))
 
         # Invalid expression, too many arguments
-        @test_throws r"Must be of the form" TM.test_setop_expr!(:(f(a, b, c)))
+        @test_throws r"invalid .* @test_setop f\(a, b, c\)" TM.test_setop_expr!(:(f(a, b, c)))
 
         # Invalid expression, unsupported operator
-        @test_throws r"Unsupported set comparison operator ≈" TM.test_setop_expr!(:(a ≈ b))
-        @test_throws r"Unsupported set comparison operator >=" TM.test_setop_expr!(:(a >= b))
-        @test_throws r"Unsupported set comparison operator f" TM.test_setop_expr!(:(f(a, b)))
+        @test_throws r"invalid .* unsupported set operator ≈" TM.test_setop_expr!(:(a ≈ b))
+        @test_throws r"invalid .* unsupported set operator >=" TM.test_setop_expr!(:(a >= b))
+        @test_throws r"invalid .* unsupported set operator f" TM.test_setop_expr!(:(f(a, b)))
 
         # Unsupported keyword arguments
-        @test_throws r"Keyword.* not supported" TM.test_setop_expr!(:(a == b), :(c=1))
-        @test_throws r"Keyword.* not supported" TM.test_setop_expr!(:(a == b), :(c=1), :(d=2))
+        @test_throws r"invalid .* unsupported keyword .*c = 1" TM.test_setop_expr!(:(a == b), :(c=1))
+        @test_throws r"invalid .* unsupported keyword .*d = 2" TM.test_setop_expr!(:(a == b), :(c=1), :(d=2))
     end
     
     @testset "print_pretty_set" begin
