@@ -4,8 +4,8 @@ const SETOP_VALID_OPS = (
     :!=, :≠,
     :⊆,
     :⊇,
-    :⊊,
-    :⊋,
+    :⊊, :⊂,
+    :⊋, :⊃,
     :^, 
     :issetequal,
     :issubset, 
@@ -34,7 +34,7 @@ function test_setop_expr!(ex::Expr, kws::Expr...)
     elseif ex.args[1] ∉ SETOP_VALID_OPS
         # Invalid operator
         throw(MacroCallError(:test_setop, ex, (), 
-            "Unsupported set operator $(ex.args[1]).\
+            "Unsupported set comparison operator $(ex.args[1]). \
             Must be one of $(join(SETOP_VALID_OPS, ", "))"
         ))
     end
@@ -51,14 +51,11 @@ end
 
 # Internal function to print nice message for sets
 function print_pretty_set(io::IO, vals, desc, max_vals=5)
-    print(io, "\n    ", length(vals), " element")
-    print(io, length(vals) == 1 ? "" : "s")
+    print(io, "\n              ") # Matches spacing in Test Failed "Evaluated: " line
+    print(io, length(vals), " element")
+    print(io, length(vals) == 1 ? " " : "s")
     print(io, " ", desc, ": ")
 
-    if length(vals) == 1
-        print(io, repr(first(vals)))
-        return
-    end
     print(io, "[")
     for (i, val) in enumerate(vals)
         print(io, repr(val))
@@ -74,7 +71,6 @@ function print_pretty_set(io::IO, vals, desc, max_vals=5)
 end
 
 function eval_test_setop(lhs, op, rhs, source)
-
     lhs, rhs = Set(lhs), Set(rhs)
 
     # Take care of inequality first, which has simple messaging:
@@ -87,7 +83,11 @@ function eval_test_setop(lhs, op, rhs, source)
     # For other ops, we can perform the operation to get the result `value`
     if op === :^
         res = isdisjoint(lhs, rhs)
-    else 
+    elseif op === :⊂
+        res = lhs ⊊ rhs
+    elseif op === :⊃
+        res = lhs ⊋ rhs
+    else
         res = eval(op)(lhs, rhs)
     end
 
@@ -109,10 +109,10 @@ function eval_test_setop(lhs, op, rhs, source)
             print(data, "LHS is not a subset of RHS.")
             print_pretty_set(data, setdiff(lhs, rhs), "in LHS \\ RHS")
 
-        elseif op === :⊊ && lhs == rhs # a ⊊ b (equal case)
+        elseif (op === :⊊ || op === :⊂) && lhs == rhs # a ⊊ b (equal case)
             print(data, "LHS is not a proper subset of RHS, they are equal.")
 
-        elseif op === :⊊ # a ⊊ b (missing elements in RHS)
+        elseif op === :⊊ || op === :⊂ # a ⊊ b (missing elements in RHS)
             print(data, "LHS is not a proper subset of RHS.")
             print_pretty_set(data, setdiff(lhs, rhs), "in LHS \\ RHS")
 
@@ -120,10 +120,10 @@ function eval_test_setop(lhs, op, rhs, source)
             print(data, "LHS is not a superset of RHS.")
             print_pretty_set(data, setdiff(rhs, lhs), "in RHS \\ LHS")
 
-        elseif op === :⊋ && lhs == rhs # a ⊋ b (equal case)
+        elseif (op === :⊋ || op === :⊃) && lhs == rhs # a ⊋ b (equal case)
             print(data, "LHS is not a proper superset of RHS, they are equal.")
 
-        elseif op === :⊋ # a ⊋ b (missing elements in LHS)
+        elseif op === :⊋ || op === :⊃ # a ⊋ b (missing elements in LHS)
             print(data, "LHS is not a proper superset of RHS.")
             print_pretty_set(data, setdiff(rhs, lhs), "in RHS \\ LHS")
 
@@ -136,5 +136,45 @@ function eval_test_setop(lhs, op, rhs, source)
     else # res = true
         return Returned(res, nothing, source)
     end
-    
+end
+
+function get_test_setop_result(expr, source)
+    op, lhs, rhs = expr.args
+    result = quote
+        try 
+            eval_test_setop(
+                $(esc(lhs)), 
+                $(QuoteNode(op)),
+                $(esc(rhs)), 
+                $(QuoteNode(source))
+            )
+        catch _e
+            _e isa InterruptException && rethrow()
+            Threw(_e, Base.current_exceptions(), $(QuoteNode(source)))
+        end
+    end
+    result
+end
+
+macro test_setop(ex, kws...)
+    # Extract `broken`/`skip` keywords into modifier
+    kws, modifier = extract_test_modifier(kws...)
+
+    # Validate and process the test expression
+    test_setop_expr!(ex, kws...)
+
+    result = get_test_setop_result(ex, __source__)
+
+    ex = Expr(:inert, ex)
+
+    result = quote
+        if $(modifier == :skip)
+            record(get_testset(), Broken(:skipped, $ex))
+        else
+            let _do = $(modifier == :broken) ? do_broken_test : do_test
+                _do($result, $ex)
+            end
+        end
+    end
+
 end

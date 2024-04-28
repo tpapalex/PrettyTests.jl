@@ -6,7 +6,9 @@
         @test TME.test_setop_expr!(:(a ⊆ b)) == :(a ⊆ b)
         @test TME.test_setop_expr!(:(a ⊇ b)) == :(a ⊇ b)
         @test TME.test_setop_expr!(:(a ⊊ b)) == :(a ⊊ b)
+        @test TME.test_setop_expr!(:(a ⊂ b)) == :(a ⊂ b)
         @test TME.test_setop_expr!(:(a ⊋ b)) == :(a ⊋ b)
+        @test TME.test_setop_expr!(:(a ⊃ b)) == :(a ⊃ b)
         @test TME.test_setop_expr!(:(a != b)) == :(a != b)
         @test TME.test_setop_expr!(:(a ≠ b)) == :(a ≠ b)
         @test TME.test_setop_expr!(:(a ^ b)) == :(a ^ b)
@@ -32,9 +34,9 @@
         @test_throws r"Must be of the form" TME.test_setop_expr!(:(f(a, b, c)))
 
         # Invalid expression, unsupported operator
-        @test_throws r"Unsupported set operator ≈" TME.test_setop_expr!(:(a ≈ b))
-        @test_throws r"Unsupported set operator >=" TME.test_setop_expr!(:(a >= b))
-        @test_throws r"Unsupported set operator f" TME.test_setop_expr!(:(f(a, b)))
+        @test_throws r"Unsupported set comparison operator ≈" TME.test_setop_expr!(:(a ≈ b))
+        @test_throws r"Unsupported set comparison operator >=" TME.test_setop_expr!(:(a >= b))
+        @test_throws r"Unsupported set comparison operator f" TME.test_setop_expr!(:(f(a, b)))
 
         # Unsupported keyword arguments
         @test_throws r"Keyword.* not supported" TME.test_setop_expr!(:(a == b), :(c=1))
@@ -44,22 +46,22 @@
     @testset "print_pretty_set" begin
         # Test with vectors, to avoid unordered set differences
         @test sprint(TME.print_pretty_set, [1], "x") == 
-            "\n    1 element x: 1"
+            "\n              1 element  x: [1]"
         @test sprint(TME.print_pretty_set, [:a], "x") == 
-            "\n    1 element x: :a"
+            "\n              1 element  x: [:a]"
 
         @test sprint(TME.print_pretty_set, [1,2,3], "x") == 
-            "\n    3 elements x: [1, 2, 3]"
+            "\n              3 elements x: [1, 2, 3]"
         @test sprint(TME.print_pretty_set, [1,2,3], "x", 10) == 
-            "\n    3 elements x: [1, 2, 3]"
+            "\n              3 elements x: [1, 2, 3]"
         @test sprint(TME.print_pretty_set, 1:6, "x", 3) == 
-            "\n    6 elements x: [1, 2, 3, ...]"
+            "\n              6 elements x: [1, 2, 3, ...]"
         @test sprint(TME.print_pretty_set, [:a,:b,:c], "x", 3) == 
-            "\n    3 elements x: [:a, :b, :c]"
+            "\n              3 elements x: [:a, :b, :c]"
         @test sprint(TME.print_pretty_set, [:a => 3], "x") == 
-            "\n    1 element x: :a => 3"
+            "\n              1 element  x: [:a => 3]"
         @test sprint(TME.print_pretty_set, [:a => 3, :b => 1], "x") == 
-            "\n    2 elements x: [:a => 3, :b => 1]"
+            "\n              2 elements x: [:a => 3, :b => 1]"
 
         # Test with sets
         val = sprint(TME.print_pretty_set, Set(1:9), "x", 10)
@@ -123,13 +125,13 @@
         res = f([1,2,3], [1,2])
         @test res.value === false
         @test startswith(res.data, "LHS and RHS are not equal.")
-        @test occursin(r"1 element in LHS \\ RHS: 3", res.data)
+        @test occursin("1 element  in LHS \\ RHS: [3]", res.data)
 
         res = f(1:5, 2:6)
         @test res.value === false
         @test startswith(res.data, "LHS and RHS are not equal.")
-        @test occursin(r"1 element in LHS \\ RHS: 1", res.data)
-        @test occursin(r"1 element in RHS \\ LHS: 6", res.data)
+        @test occursin("1 element  in LHS \\ RHS: [1]", res.data)
+        @test occursin("1 element  in RHS \\ LHS: [6]", res.data)
 
         res = f(4:6, 1:9)
         @test res.value === false
@@ -151,13 +153,13 @@
         res = f([1,2,3], [1,2])
         @test res.value === false
         @test startswith(res.data, "LHS and RHS are not equal.")
-        @test occursin(r"1 element in LHS \\ RHS: 3", res.data)
+        @test occursin("1 element  in LHS \\ RHS: [3]", res.data)
 
         res = f(1:5, 2:6)
         @test res.value === false
         @test startswith(res.data, "LHS and RHS are not equal.")
-        @test occursin(r"1 element in LHS \\ RHS: 1", res.data)
-        @test occursin(r"1 element in RHS \\ LHS: 6", res.data)
+        @test occursin("1 element  in LHS \\ RHS: [1]", res.data)
+        @test occursin("1 element  in RHS \\ LHS: [6]", res.data)
 
         res = f(4:6, 1:9)
         @test res.value === false
@@ -183,12 +185,12 @@
         res = f([1,2,3], [1,2])
         @test res.value === false
         @test startswith(res.data, "LHS is not a subset of RHS.")
-        @test occursin(r"1 element in LHS \\ RHS: 3", res.data)
+        @test occursin("1 element  in LHS \\ RHS: [3]", res.data)
 
-        res = f(1:5, [1,2])
+        res = f(1:4, [1,2])
         @test res.value === false
         @test startswith(res.data, "LHS is not a subset of RHS.")
-        @test occursin(r"3 elements in LHS \\ RHS: \[", res.data)
+        @test occursin(r"2 elements in LHS \\ RHS: \[(3|4), (3|4)\]", res.data)
     end
 
     @testset "eval_test_setop: issubset" begin
@@ -209,12 +211,12 @@
         res = f([1,2,3], [1,2])
         @test res.value === false
         @test startswith(res.data, "LHS is not a subset of RHS.")
-        @test occursin(r"1 element in LHS \\ RHS: 3", res.data)
+        @test occursin("1 element  in LHS \\ RHS: [3]", res.data)
 
-        res = f(1:5, [1,2])
+        res = f(1:4, [1,2])
         @test res.value === false
         @test startswith(res.data, "LHS is not a subset of RHS.")
-        @test occursin(r"3 elements in LHS \\ RHS: \[", res.data)
+        @test occursin(r"2 elements in LHS \\ RHS: \[(3|4), (3|4)\]", res.data)
     end
 
     @testset "eval_test_setop: ⊇" begin
@@ -235,12 +237,12 @@
         res = f([1,2], [1,2,3])
         @test res.value === false
         @test startswith(res.data, "LHS is not a superset of RHS.")
-        @test occursin(r"1 element in RHS \\ LHS: 3", res.data)
+        @test occursin("1 element  in RHS \\ LHS: [3]", res.data)
 
-        res = f([1,2], 1:5)
+        res = f([1,2], 1:4)
         @test res.value === false
         @test startswith(res.data, "LHS is not a superset of RHS.")
-        @test occursin(r"3 elements in RHS \\ LHS: \[", res.data)
+        @test occursin(r"2 elements in RHS \\ LHS: \[(3|4), (3|4)\]", res.data)
     end
 
     @testset "eval_test_setop: ⊊" begin
@@ -261,7 +263,34 @@
         res = f([1,2,3], [1,2])
         @test res.value === false
         @test startswith(res.data, "LHS is not a proper subset of RHS.")
-        @test occursin(r"1 element in LHS \\ RHS: 3", res.data)
+        @test occursin("1 element  in LHS \\ RHS: [3]", res.data)
+
+        res = f([1,2,3,1,1,4], [1,2])
+        @test res.value === false
+        @test startswith(res.data, "LHS is not a proper subset of RHS.")
+        @test occursin(r"2 elements in LHS \\ RHS: \[(3|4), (3|4)\]", res.data)
+    end
+
+
+    @testset "eval_test_setop: ⊂" begin
+        f = (lhs, rhs) -> TME.eval_test_setop(lhs, :⊂, rhs, LineNumberNode(1))
+
+        res = f([1,2], [1,2,3])
+        @test res.value === true
+        @test res.data === nothing
+
+        res = f(1:5, 1:10)
+        @test res.value === true
+        @test res.data === nothing
+
+        res = f([1,2,3], [1,2,3])
+        @test res.value === false
+        @test res.data == "LHS is not a proper subset of RHS, they are equal."
+
+        res = f([1,2,3], [1,2])
+        @test res.value === false
+        @test startswith(res.data, "LHS is not a proper subset of RHS.")
+        @test occursin("1 element  in LHS \\ RHS: [3]", res.data)
 
         res = f([1,2,3,1,1,4], [1,2])
         @test res.value === false
@@ -287,7 +316,33 @@
         res = f([1,2], [1,2,3])
         @test res.value === false
         @test startswith(res.data, "LHS is not a proper superset of RHS.")
-        @test occursin(r"1 element in RHS \\ LHS: 3", res.data)
+        @test occursin("1 element  in RHS \\ LHS: [3]", res.data)
+
+        res = f([1,2], [1,2,3,1,1,4])
+        @test res.value === false
+        @test startswith(res.data, "LHS is not a proper superset of RHS.")
+        @test occursin(r"2 elements in RHS \\ LHS: \[(3|4), (3|4)\]", res.data)
+    end
+
+    @testset "eval_test_setop: ⊃" begin
+        f = (lhs, rhs) -> TME.eval_test_setop(lhs, :⊃, rhs, LineNumberNode(1))
+
+        res = f([1,2,3], [1,2])
+        @test res.value === true
+        @test res.data === nothing
+
+        res = f(1:10, 1:5)
+        @test res.value === true
+        @test res.data === nothing
+
+        res = f([1,2,3], [1,2,3])
+        @test res.value === false
+        @test res.data == "LHS is not a proper superset of RHS, they are equal."
+
+        res = f([1,2], [1,2,3])
+        @test res.value === false
+        @test startswith(res.data, "LHS is not a proper superset of RHS.")
+        @test occursin("1 element  in RHS \\ LHS: [3]", res.data)
 
         res = f([1,2], [1,2,3,1,1,4])
         @test res.value === false
@@ -309,7 +364,7 @@
         res = f([1,2,3], [3,4])
         @test res.value === false
         @test startswith(res.data, "LHS and RHS are not disjoint.")
-        @test occursin(r"1 element in common: 3", res.data)
+        @test occursin("1 element  in common: [3]", res.data)
 
         res = f(1:5, 4:8)
         @test res.value === false
@@ -331,7 +386,7 @@
         res = f([1,2,3], [3,4])
         @test res.value === false
         @test startswith(res.data, "LHS and RHS are not disjoint.")
-        @test occursin(r"1 element in common: 3", res.data)
+        @test occursin("1 element  in common: [3]", res.data)
 
         res = f(1:5, 4:8)
         @test res.value === false
