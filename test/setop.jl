@@ -9,7 +9,7 @@
         @test TM.test_setop_expr!(:(a ⊋ b)) == :(a ⊋ b)
         @test TM.test_setop_expr!(:(a != b)) == :(a != b)
         @test TM.test_setop_expr!(:(a ≠ b)) == :(a ≠ b)
-        @test TM.test_setop_expr!(:(a ^ b)) == :(a ^ b)
+        @test TM.test_setop_expr!(:(a || b)) == :(a || b)
 
         # Expressions with more complicated sets
         @test TM.test_setop_expr!(:(a == [1,2])) == :(a == [1,2])
@@ -157,7 +157,7 @@
         res = f(1:4, [1,2])
         @test res.value === false
         @test startswith(res.data, "Left set is not a subset of right set.")
-        @test occursin(r"2 elements in left\\right: \[(3|4), (3|4)\]", res.data)
+        @test occursin("2 elements in left\\right: [3, 4]", res.data)
     end
 
     @testset "eval_test_setop: ⊇" begin
@@ -180,10 +180,10 @@
         @test startswith(res.data, "Left set is not a superset of right set.")
         @test occursin("1 element  in right\\left: [3]", res.data)
 
-        res = f([1,2], 1:4)
+        res = f([1,2], 4:-1:1)
         @test res.value === false
         @test startswith(res.data, "Left set is not a superset of right set.")
-        @test occursin(r"2 elements in right\\left: \[(3|4), (3|4)\]", res.data)
+        @test occursin("2 elements in right\\left: [4, 3]", res.data)
     end
 
     @testset "eval_test_setop: ⊊" begin
@@ -206,10 +206,10 @@
         @test startswith(res.data, "Left set is not a proper subset of right set.")
         @test occursin("1 element  in left\\right: [3]", res.data)
 
-        res = f([1,2,3,1,1,4], [1,2])
+        res = f([1,2,4,1,1,3], [1,2])
         @test res.value === false
         @test startswith(res.data, "Left set is not a proper subset of right set.")
-        @test occursin(r"2 elements in left\\right: \[(3|4), (3|4)\]", res.data)
+        @test occursin("2 elements in left\\right: [4, 3]", res.data)
     end
 
     @testset "eval_test_setop: ⊋" begin
@@ -232,14 +232,14 @@
         @test startswith(res.data, "Left set is not a proper superset of right set.")
         @test occursin("1 element  in right\\left: [3]", res.data)
 
-        res = f([1,2], [1,2,3,1,1,4])
+        res = f([1,2], [1,2,5,1,1,4])
         @test res.value === false
         @test startswith(res.data, "Left set is not a proper superset of right set.")
-        @test occursin(r"2 elements in right\\left: \[(3|4), (3|4)\]", res.data)
+        @test occursin("2 elements in right\\left: [5, 4]", res.data)
     end
     
-    @testset "eval_test_setop: ^" begin
-        f = (lhs, rhs) -> TM.eval_test_setop(lhs, :^, rhs, LineNumberNode(1))
+    @testset "eval_test_setop: ||" begin
+        f = (lhs, rhs) -> TM.eval_test_setop(lhs, :||, rhs, LineNumberNode(1))
 
         res = f([1,2,3], [4,5])
         @test res.value === true
@@ -254,11 +254,40 @@
         @test startswith(res.data, "Left and right sets are not disjoint.")
         @test occursin("1 element  in common: [3]", res.data)
 
-        res = f(1:5, 4:8)
+        res = f(1:5, 3:8)
         @test res.value === false
         @test startswith(res.data, "Left and right sets are not disjoint.")
-        @test occursin(r"2 elements in common: \[(4|5), (4|5)\]", res.data)
+        @test occursin("3 elements in common: [3, 4, 5]", res.data)
     end
 
+    @testset "@test_setop" begin
+        @test_setop [1, 2, 3] == [3, 1, 2]
+        @test_setop [1, 3, 5, 5, 3, 1] == 1:2:5
+        
+        @test_setop [1, 2, 3] != 1:4
+        @test_setop 1 != [1, 2, 3, 4]
+
+        @test_setop 1:5 ≠ 2
+        @test_setop [1, 1, 1, 2] ≠ [2, 1, 42]
+
+        @test_setop 1:5 ⊆ 1:5
+        @test_setop [1, 2, 3] ⊆ 1:5
+        @test_setop [1, 1, 1] ⊆ [1, 2, 3, 4, 5]
+
+        @test_setop 1:5 ⊇ 1:5
+        @test_setop 1:5 ⊇ [3, 3, 3, 1, 5]
+        
+        @test_setop [1, 2, 3] ⊊ [1, 2, 3, 4]
+        @test_setop 1:5 ⊊ 1:10
+        @test_setop [1, 1, 3, 1] ⊊ 3:-1:1
+
+        @test_setop [1, 2, 3, 4] ⊋ [1, 2, 3]
+        @test_setop 1:10 ⊋ 1:5
+        @test_setop 3:-1:1 ⊋ [1, 1, 3, 1]
+
+        @test_setop [1, 2, 3] || [4, 5]
+        @test_setop 1:5 || 6:8
+
+    end
 
 end

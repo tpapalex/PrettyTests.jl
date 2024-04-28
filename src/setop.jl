@@ -7,7 +7,7 @@ const SETOP_VALID_OPS = (
     :⊇,
     :⊊,
     :⊋,
-    :^,
+    :||,
 )
 
 """
@@ -18,11 +18,13 @@ expression is well-formed.
 """
 function test_setop_expr!(ex::Expr, kws::Expr...)
 
-    if ex.head == :comparison 
+    if ex.head === :comparison 
         # Do not support a == b ⊆ c
         throw(MacroCallError(:test_setop, ex, (), 
             "Comparisons with more than 2 sets not supported."
         ))
+    elseif ex.head === :||
+        # Support || as alias for isdisjoint(a, b)
     elseif ex.head !== :call || length(ex.args) > 3
         # Only support a <op> b
         throw(MacroCallError(:test_setop, ex, (), 
@@ -75,7 +77,7 @@ function eval_test_setop(lhs, op, rhs, source)
         res = issetequal(lhs, rhs)
     elseif op === :!= || op === :≠
         res = !issetequal(lhs, rhs)
-    elseif op === :^
+    elseif op === :||
         res = isdisjoint(lhs, rhs)
     else
         res = eval(op)(lhs, rhs)
@@ -114,7 +116,7 @@ function eval_test_setop(lhs, op, rhs, source)
             print(data, "Left set is not a proper superset of right set.")
             print_pretty_set(data, setdiff(rhs, lhs), "in right\\left")
 
-        elseif op === :^ # isdisjoint(a, b)
+        elseif op === :|| # isdisjoint(a, b)
             print(data, "Left and right sets are not disjoint.")
             print_pretty_set(data, intersect(lhs, rhs), "in common")
 
@@ -129,8 +131,13 @@ function eval_test_setop(lhs, op, rhs, source)
     end
 end
 
-function get_test_setop_result(expr, source)
-    op, lhs, rhs = expr.args
+function get_test_setop_result(ex, source)
+    if ex.head === :||
+        op = :||
+        lhs, rhs = ex.args
+    else
+        op, lhs, rhs = ex.args
+    end
     result = quote
         try 
             eval_test_setop(
