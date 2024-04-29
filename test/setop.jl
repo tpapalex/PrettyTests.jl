@@ -290,6 +290,118 @@
         @test_setop 1:5 || 6:8
     end
 
+    @testset "@test_setop should only evaluate arguments once" begin
+        g = Int[]
+        f = (x) -> (push!(g, x); x)
+        @test_setop f(1) == 1
+        @test g == [1]
+
+        empty!(g)
+        @test_setop 1 ≠ f(2)
+        @test g == [2]
+    end
+
+    @testset "@test_setop fails" begin
+        let fails = @testset NoThrowTestSet begin
+                # 1: == 
+                @test_setop [1,2,3] == [1,2,3,4]
+                
+                # 2: !=
+                @test_setop [1,2,3] != [1,2,3]
+
+                # 3: ≠
+                @test_setop 1 ≠ 1
+
+                # 4: ⊆
+                @test_setop [3,2,1,3,2,1] ⊆ [2,3]
+
+                # 5: ⊇
+                @test_setop 2:4 ⊇ 1:5
+
+                # 6: ⊊ (fail because equal)
+                @test_setop [1,2,3] ⊊ [1,2,3]
+
+                # 7: ⊆ (fail because missing RHS)
+                @test_setop 1:4 ⊊ 1:3
+
+                # 8: ⊋ (fail because equal)
+                @test_setop [5,5,5,6] ⊋ [6,5]
+
+                # 9: ⊋ (fail because missing LHS)
+                @test_setop [1,1,1,2] ⊋ [3,2]
+
+                # 10: || (disjoint)
+                @test_setop [1,1,1,2] || [3,2]
+
+            end # teststet
+
+            for (i, fail) in enumerate(fails)
+                @testset "isa Fail (i = $i)" begin
+                    @test fail isa Test.Fail
+                    @test fail.test_type === :test
+                end
+            end
+
+            let str = sprint(show, fails[1])
+                @test occursin("Expression: [1, 2, 3] == [1, 2, 3, 4]", str)
+                @test occursin("Evaluated: Left and right sets are not equal.", str)
+                @test occursin("0 elements in left\\right: []", str)
+                @test occursin("1 element  in right\\left: [4]", str)
+            end
+
+            let str = sprint(show, fails[2])
+                @test occursin("Expression: [1, 2, 3] != [1, 2, 3]", str)
+                @test occursin("Evaluated: Left and right sets are equal.", str)
+            end
+
+            let str = sprint(show, fails[3])
+                @test occursin("Expression: 1 ≠ 1", str)
+                @test occursin("Evaluated: Left and right sets are equal.", str)
+            end
+
+            let str = sprint(show, fails[4])
+                @test occursin("Expression: [3, 2, 1, 3, 2, 1] ⊆ [2, 3]", str)
+                @test occursin("Evaluated: Left set is not a subset of right set.", str)
+                @test occursin("1 element  in left\\right: [1]", str)
+            end
+
+            let str = sprint(show, fails[5])
+                @test occursin("Expression: 2:4 ⊇ 1:5", str)
+                @test occursin("Evaluated: Left set is not a superset of right set.", str)
+                @test occursin("2 elements in right\\left: [1, 5]", str)
+            end
+
+            let str = sprint(show, fails[6])
+                @test occursin("Expression: [1, 2, 3] ⊊ [1, 2, 3]", str)
+                @test occursin("Evaluated: Left and right sets are equal, left is not a proper subset.", str)
+            end
+
+            let str = sprint(show, fails[7])
+                @test occursin("Expression: 1:4 ⊊ 1:3", str)
+                @test occursin("Evaluated: Left set is not a proper subset of right set.", str)
+                @test occursin("1 element  in left\\right: [4]", str)
+            end
+
+            let str = sprint(show, fails[8])
+                @test occursin("Expression: [5, 5, 5, 6] ⊋ [6, 5]", str)
+                @test occursin("Evaluated: Left and right sets are equal, left is not a proper superset.", str)
+            end
+
+            let str = sprint(show, fails[9])
+                @test occursin("Expression: [1, 1, 1, 2] ⊋ [3, 2]", str)
+                @test occursin("Evaluated: Left set is not a proper superset of right set.", str)
+                @test occursin("1 element  in right\\left: [3]", str)
+            end
+
+            let str = sprint(show, fails[10])
+                @test occursin("Expression: [1, 1, 1, 2] || [3, 2]", str)
+                @test occursin("Evaluated: Left and right sets are not disjoint.", str)
+                @test occursin("1 element  in common: [2]", str)
+            end
+
+        end # let fails
+    end
+
     @testset "@test_setop with skip/broken=false kwargs" begin
         a = 1
         @test_setop 1 == 1 broken=false
@@ -298,15 +410,28 @@
         @test_setop 1 == 1 skip=!isone(1)
     end
 
-    # @testset "@test_setop with skip=true" begin
 
-    #     let fails = @testset NoThrowTestSet begin
-    #         @test 1 == 1 skip=true
-    #         end
-    #     end
+    @testset "@test_setop with skip=true" begin
+        let skips = @testset NoThrowTestSet begin
+                @test_setop 1 == 1 skip=true
+                @test_setop 1 == 2 skip=true
+            end # testset
 
-    #     @show fails
-        
-    # end
+            @test skips[1] isa Test.Broken && skips[1].test_type === :skipped
+            @test skips[2] isa Test.Broken && skips[2].test_type === :skipped
+        end # let skips
+    end
+
+    @testset "@test_setop with broken=true" begin
+        let brokens = @testset NoThrowTestSet begin
+                @test 1 == 2 broken=true
+                @test 1 == 1 broken=true
+            end
+
+            @test brokens[1] isa Test.Broken && brokens[1].test_type === :test
+            @test brokens[2] isa Test.Error && brokens[2].test_type === :test_unbroken
+        end
+    end
+    
 
 end
