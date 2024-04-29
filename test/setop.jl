@@ -35,8 +35,8 @@
         @test_throws r"invalid .* unsupported set operator f" TM.test_setop_expr!(:(f(a, b)))
 
         # Unsupported keyword arguments
-        @test_throws r"invalid .* unsupported keyword .*c = 1" TM.test_setop_expr!(:(a == b), :(c=1))
-        @test_throws r"invalid .* unsupported keyword .*d = 2" TM.test_setop_expr!(:(a == b), :(c=1), :(d=2))
+        @test_throws r"invalid .* unsupported extra arguments .*c = 1" TM.test_setop_expr!(:(a == b), :(c=1))
+        @test_throws r"invalid .* unsupported extra arguments .*broken d = 2" TM.test_setop_expr!(:(a == b), :(broken), :(d=2))
     end
     
     @testset "print_pretty_set" begin
@@ -288,7 +288,25 @@
 
         @test_setop [1, 2, 3] || [4, 5]
         @test_setop 1:5 || 6:8
-
     end
+
+    @testset "@test_setop with skip/broken=false kwargs" begin
+        a = 1
+        @test_setop 1 == 1 broken=false
+        @test_setop 1 == 1 skip=false
+        @test_setop 1 == 1 broken=a==2
+        @test_setop 1 == 1 skip=!isone(1)
+    end
+
+    # @testset "@test_setop with skip=true" begin
+
+    #     let fails = @testset NoThrowTestSet begin
+    #         @test 1 == 1 skip=true
+    #         end
+    #     end
+
+    #     @show fails
+        
+    # end
 
 end

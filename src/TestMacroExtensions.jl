@@ -6,13 +6,8 @@ module TestMacroExtensions
     import Test: do_test, do_broken_test
 
     export @test_setop
-    # export @test_issubset
-    # export @test_setsequal
 
     include("utilities.jl")
     include("setop.jl")
-    # include("setsequal.jl")
-    # include("issubset.jl")
-    # include("vectorized.jl")
 
 end

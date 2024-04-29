@@ -38,7 +38,7 @@ function test_setop_expr!(ex, kws...)
 
     # No keyword arguments
     if length(kws) > 0
-        error("invalid test macro call: unsupported keyword arguments $(join(kws, " "))")
+        error("invalid test macro call: unsupported extra arguments $(join(kws, " "))")
     end
 
     return ex
@@ -127,6 +127,7 @@ function eval_test_setop(lhs, op, rhs, source)
 end
 
 function get_test_setop_result(ex, source)
+    # Assumes the expression is well-formed for @test_setop (see test_setop_expr!)
     if ex.head === :||
         op = :||
         lhs, rhs = ex.args
@@ -150,28 +151,13 @@ function get_test_setop_result(ex, source)
 end
 
 macro test_setop(ex, kws...)
-    # Based on code in Test.@test macro.
-    # Collect the broken/skip keywords and remove them from the rest of keywords
-    broken = [kw.args[2] for kw in kws if kw.args[1] === :broken]
-    skip = [kw.args[2] for kw in kws if kw.args[1] === :skip]
-    kws = filter(kw -> kw.args[1] ∉ (:skip, :broken), kws)
-
-    # Validation of broken/skip keywords
-    for (kw, name) in ((broken, :broken), (skip, :skip))
-        if length(kw) > 1
-            error("invalid test macro call: cannot set $(name) keyword multiple times")
-        end
-    end
-    if length(skip) > 0 && length(broken) > 0
-        error("invalid test macro call: cannot set both skip and broken keywords")
-    end
-    if length(kws) > 0
-        error("invalid test macro call: keyword arguments not supported")
-    end
+    # Extract broken/skip keywords
+    kws, broken, skip = extract_broken_skip_keywords(kws...)
 
     # Validate and process the test expression
     test_setop_expr!(ex, kws...)
 
+    # Get the result expression
     result = get_test_setop_result(ex, __source__)
 
     ex = Expr(:inert, ex)
