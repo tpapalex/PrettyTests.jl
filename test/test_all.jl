@@ -93,4 +93,42 @@
 
     end
 
+
+    @testset "@test_all" begin
+        a = [1,2,3]
+        b = a .+ 0.01
+        c = a .+ 1e-10 
+
+        # Comparison (from call)
+        @test_all a == 1:3
+        @test_all a .<= b
+        @test_all 5:7 .>= b
+        @test_all a ≈ c
+        @test_all a .≉ b
+        @test_all [Int, Float64] <: Real
+        @test_all [Real, Integer] .>: Int16
+
+        # Approx special case
+        HIGH_TOL = 1e-1 # to check local scope
+        @test_all a ≈ c atol=1e-8
+        @test_all a .≈ c atol=HIGH_TOL # Check local scope
+        @test_all a .≉ b atol=1e-8
+        @test_all .≈(a, c) atol=1e-8
+        @test_all ≈(a, b, atol=1e-1)
+        @test_all .≈(a, b; atol=HIGH_TOL)
+        @test_all .≉(a, b; atol=1e-8)
+        @test_all .≉(a, b; atol=1e-8) rtol=1e-8
+
+        # Displayed function
+        
+        @test_all occursin(r"(a|b){3}", ["saaa", "baab", "aabaa"])
+
+        # Fall back
+        func() = ([1, 2, 3] .> 0)
+        @test_all func()
+        @test_all func() .&& func()
+
+        v = [1, 2]
+    end
+
 end

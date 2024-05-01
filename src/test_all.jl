@@ -1,5 +1,22 @@
 
-const comparison_prec = Base.operator_precedence(:(==))
+const COMPARISON_PREC = Base.operator_precedence(:(==)) # For identifying comparison expressions
+
+const DISPLAYED_FUNCS = ( # Functions that will be nicely displayed
+    :isequal,
+    :isapprox,
+    :occursin,
+    :startswith,
+    :endswith,
+    :isempty,
+    :contains, 
+    :ismissing, 
+    :isnan, 
+    :isinf
+)
+
+const APPROX_OPS = (:≈, :≉, :.≈, :.≉) 
+
+const LOGICAL_OPS = (:&&, :||, :.&&, :.||)
 
 function _string_idxs_justify(idxs) 
     if eltype(idxs) <: CartesianIndex
@@ -13,7 +30,7 @@ function _string_idxs_justify(idxs)
     end
 end
 
-function _pretty_print_failures(@nospecialize(bitarray), failure_printer, negate=false; max_vals=10)
+function _pretty_print_failures(@nospecialize(bitarray), failure_printer, negate=false; max_vals=10) # TODO(tpapalex): add 'wrap_negation' kwarg?
 
     # Finda all failing indices. 
     idxs = findall(x -> !isa(x, Bool) || (x == negate), bitarray)
@@ -127,14 +144,14 @@ function _get_preprocessed_expr(ex, kws...)
     # Normalize comparisons to :comparison
     if isa(ex, Expr) && ex.head === :call && length(ex.args) == 3 && length(kws) == 0 &&
         first(string(ex.args[1])) != "." && !_is_splat(ex.args[2]) && !_is_splat(ex.args[3]) && 
-        (ex.args[1] === :(==) || Base.operator_precedence(ex.args[1]) == comparison_prec)
+        (ex.args[1] === :(==) || Base.operator_precedence(ex.args[1]) == COMPARISON_PREC)
 
         ex = Expr(:comparison, ex.args[2], ex.args[1], ex.args[3])
 
     # Mark <: and >: as :comparison expressions
     elseif isa(ex, Expr) && length(ex.args) == 2 &&
         !_is_splat(ex.args[1]) && !_is_splat(ex.args[2]) &&
-        Base.operator_precedence(ex.head) == comparison_prec
+        Base.operator_precedence(ex.head) == COMPARISON_PREC
 
         ex = Expr(:comparison, ex.args[1], ex.head, ex.args[2])
 
@@ -170,13 +187,16 @@ function _result_comparison(ex, kws, source, negate=false)
 
     # Quote operators, escape arguments
     escaped_args = [i % 2 == 1 ? esc(arg) : QuoteNode(arg) for (i, arg) in enumerate(ex.args)]
-    return quote
+
+    testret = quote
         _eval_testall_comparison(
             Expr(:comparison, $(escaped_args...)),
             $(QuoteNode(source)),
             $(QuoteNode(negate))
         )
     end
+
+    return testret
 end
 
 function _eval_testall_comparison(ex::Expr, source::LineNumberNode, negate::Bool=false)
@@ -219,14 +239,12 @@ end
 
 # ISAPPROX SPECIAL CASE (to support kwargs)
 function _is_approx_specialcase(ex, kws)
-    OPS = (:≈, :≉, :.≈, :.≉)
     return isa(ex, Expr) && 
         ex.head === :call && 
-        length(ex.args) > 3 && 
+        length(ex.args) >= 3 && 
         !_is_splat(ex.args[2]) && 
         !_is_splat(ex.args[3]) &&
-        ex.args[1] ∈ OPS && 
-        length(kws) > 0
+        ex.args[1] ∈ APPROX_OPS
 end
 
 function _result_approx_specialcase(ex, kws, source, negate=false)
@@ -236,28 +254,40 @@ function _result_approx_specialcase(ex, kws, source, negate=false)
     end
     escaped_func = QuoteNode(ex.args[1])
     escaped_args, escaped_kwargs = _get_escaped_args(ex.args[2:end], kws)
-    return quote
+    
+    testret = quote
         _eval_testall_comparison(
             Expr(:call, $(escaped_func), $(escaped_args...), $(escaped_kwargs...)),
             $(QuoteNode(source)),
             $(QuoteNode(negate))
         )
     end
+
+    return testret
 end
 
 
 # DISPLAYED FUNCTION
 function _is_displayed_func(ex, kws)
-    return isa(ex, Expr) && 
-        (ex.head === :call || ex.head === :.) 
+    if !isa(ex, Expr) 
+        return false
+    elseif ex.head === :call && ex.args[1] ∈ DISPLAYED_FUNCS
+        return length(ex.args) >= 2 && all(a -> !_is_splat(a), ex.args[2:end])
+    elseif ex.head === :. && ex.args[1] ∈ DISPLAYED_FUNCS
+        return length(ex.args[2].args) >= 1 && all(a -> !_is_splat(a), ex.args[2].args)
+    else
+        return false
+    end
 end
 
 function _result_displayed_func(ex, kws, source, negate)
-    # Vectorize if unvectorized
-    if ex.head === :call
-        ex = Expr(:., ex.args[1], Expr(:tuple, ex.args[2:end]...))
+    # Treat .≈ and .≉ as special case, because they are not functions that can be vectorized
+    if ex.head === :call && ex.args[1] ∈ (:.≈, :.≉)
+        escaped_args, escaped_kwargs = _get_escaped_args(ex.args[2:end], kws)
     end
-
+    
+    # Otherwise, we can just vectorize the call
+    ex = Expr(:., ex.args[1], Expr(:tuple, ex.args[2:end]...))
     escaped_func = QuoteNode(ex.args[1])
     escaped_args, escaped_kwargs = _get_escaped_args(ex.args[2].args, kws)
 
@@ -357,7 +387,7 @@ end
 
 
 # Finally
-function get_test_all_result(ex, kws, source)
+function get_test_all_result(ex, kws, source, quoted=false)
 
     orig_ex = ex
     ex, negate = _get_preprocessed_expr(ex, kws...)
@@ -365,18 +395,27 @@ function get_test_all_result(ex, kws, source)
     if _is_comparison(ex, kws)
         @info "comparison"
         testret = _result_comparison(ex, kws, source, negate)
+        quoted_ex = Expr(:call, :all, ex)
     elseif _is_approx_specialcase(ex, kws)
         @info "special case ≈ or ≉"
         testret = _result_approx_specialcase(ex, kws, source, negate)
+        quoted_ex = ex
     elseif _is_displayed_func(ex, kws)
         @info "displayed func"
         testret = _result_displayed_func(ex, kws, source, negate)
+        quoted_ex = ex
     elseif _is_anonymous_map(ex, kws)
         @info "mapped anonymous"
-        testret = _result_mapped_anonymous(ex, kws, source, negate)
+        testret = _result_anonymous_map(ex, kws, source, negate)
+        quoted_ex = ex
     else 
         @info "fallback"
         testret = _result_fallback(orig_ex, kws, source)
+        quoted_ex = ex
+    end
+
+    if negate
+        quoted_ex = Expr(:call, :.!, quoted_ex)
     end
 
     result = quote
@@ -387,26 +426,32 @@ function get_test_all_result(ex, kws, source)
             Threw(_e, Base.current_exceptions(), $(QuoteNode(source)))
         end
     end
-    result
+
+    result, quoted_ex
 end
 
 """
     @test_all ex
     @test_all 
-
-
 """
-macro test_all(ex, kws...)
+macro test_all(ex, kws...) #TODO(tpapalex): add 'quoted' argument
     kws, broken, skip = extract_broken_skip_keywords(kws...)
+    kws, quoted = extract_keyword(:quoted, kws...)
 
-    result = get_test_all_result(ex, kws, __source__)
+    result, quoted_ex = get_test_all_result(ex, kws, __source__, quoted)
+    quoted_ex = Expr(:inert, quoted_ex)
     quote 
         if $(length(skip) > 0 && esc(skip[1]))
-            record(get_testset(), Broken(:skipped, $ex))
+            record(get_testset(), Broken(:skipped, $quoted_ex))
         else
             let _do = $(length(broken) > 0 && esc(broken[1])) ? do_broken_test : do_test
-                _do($result, $ex)
+                _do($result, $quoted_ex)
             end
         end
     end
 end
+
+a = [1,2,3]
+b = [1,2,5]
+@test_all a == error()
+
