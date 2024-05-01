@@ -20,3 +20,17 @@ function extract_broken_skip_keywords(kws...)
 
     return kws, broken, skip
 end
+
+
+# Internal function called on a test macros kws... to extract a named keyword
+function extract_keyword(nm, kws...)
+    # Collect the broken/skip keywords and remove them from the rest of keywords
+    exs = [kw.args[2] for kw in kws 
+           if isa(kw, Expr) && kw.head == :(=) && kw.args[1] === nm]
+    kws = filter(kw -> !isa(kw, Expr) || (kw.args[1] !== nm), kws)
+
+    if length(exs) > 1
+        error("invalid test macro call: cannot set $nm keyword multiple times")
+    end
+    return kws, exs
+end

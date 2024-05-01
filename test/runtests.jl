@@ -5,7 +5,7 @@ const TM = TestMacroExtensions
 
  @testset "TestMacroExtensions.jl" begin
     include("nothrowtestset.jl")
-    # include("utilities.jl")
-    # include("setop.jl")
-    include("vecop.jl")
+    include("utilities.jl")
+    include("test_setop.jl")
+    include("test_all.jl")
 end
