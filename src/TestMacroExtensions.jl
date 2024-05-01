@@ -9,5 +9,6 @@ module TestMacroExtensions
 
     include("utilities.jl")
     include("setop.jl")
+    include("vecop.jl")
 
 end
