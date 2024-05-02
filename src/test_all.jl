@@ -11,12 +11,20 @@ const DISPLAYED_FUNCS = ( # Functions that will be nicely displayed
     :contains, 
     :ismissing, 
     :isnan, 
-    :isinf
+    :isinf, 
+    :iseven, 
+    :isodd, 
+    :isreal,
+    :isa
 )
 
 const APPROX_OPS = (:≈, :≉, :.≈, :.≉) 
 
 const LOGICAL_OPS = (:&&, :||, :.&&, :.||)
+
+_is_splat(x) = isa(x, Expr) && x.head === :...
+
+_is_vectorized_op(x::Symbol) = first(string(x)) == '.'
 
 function _string_idxs_justify(idxs) 
     if eltype(idxs) <: CartesianIndex
@@ -84,7 +92,7 @@ function _pretty_print_failures(@nospecialize(bitarray), failure_printer, negate
     return String(take!(io))
 end
 
-function _get_escaped_args(ex_args, kws)
+function _get_escaped_args(ex_args, kws) # TODO(tpapalex): should probably not have this throw errors, since we might want to use fall back if can't parse arguments
     escaped_args = []
     escaped_kwargs = []
 
@@ -129,7 +137,6 @@ function _get_escaped_args(ex_args, kws)
 end
 
 # GENERAL UTILITIES
-_is_splat(x) = isa(x, Expr) && x.head === :...
 
 function _get_preprocessed_expr(ex, kws...)
 
@@ -141,11 +148,14 @@ function _get_preprocessed_expr(ex, kws...)
         ex = ex.args[2]
     end
 
-    # Normalize comparisons to :comparison
-    if isa(ex, Expr) && ex.head === :call && length(ex.args) == 3 && length(kws) == 0 &&
-        first(string(ex.args[1])) != "." && !_is_splat(ex.args[2]) && !_is_splat(ex.args[3]) && 
-        (ex.args[1] === :(==) || Base.operator_precedence(ex.args[1]) == COMPARISON_PREC)
-
+    # Normalize comparison calls with printable args to :comparison
+    if isa(ex, Expr) && 
+        ex.head === :call && 
+        length(ex.args) == 3 && 
+        length(kws) == 0 && # To push ≈/≉ to 
+        (ex.args[1] === :(==) || Base.operator_precedence(ex.args[1]) == COMPARISON_PREC) &&
+        !_is_splat(ex.args[2]) && 
+        !_is_splat(ex.args[3]) 
         ex = Expr(:comparison, ex.args[2], ex.args[1], ex.args[3])
 
     # Mark <: and >: as :comparison expressions
@@ -179,8 +189,7 @@ function _result_comparison(ex, kws, source, negate=false)
 
     # Replace all operators with vectorized versions (without loss of generality?)
     for i in 2:2:length(ex.args)
-        @assert isa(ex.args[i], Symbol)
-        if first(string(ex.args[i])) != '.'
+        if !_is_vectorized_op(ex.args[i])
             ex.args[i] = Symbol(:., ex.args[i])
         end
     end
@@ -249,7 +258,7 @@ end
 
 function _result_approx_specialcase(ex, kws, source, negate=false)
     # Replace operator with vectorized version
-    if first(string(ex.args[1])) != '.'
+    if !_is_vectorized_op(ex.args[1])
         ex.args[1] = Symbol(:., ex.args[1])
     end
     escaped_func = QuoteNode(ex.args[1])
@@ -265,7 +274,6 @@ function _result_approx_specialcase(ex, kws, source, negate=false)
 
     return testret
 end
-
 
 # DISPLAYED FUNCTION
 function _is_displayed_func(ex, kws)
@@ -393,23 +401,23 @@ function get_test_all_result(ex, kws, source, quoted=false)
     ex, negate = _get_preprocessed_expr(ex, kws...)
 
     if _is_comparison(ex, kws)
-        @info "comparison"
+        #@info "comparison"
         testret = _result_comparison(ex, kws, source, negate)
         quoted_ex = Expr(:call, :all, ex)
     elseif _is_approx_specialcase(ex, kws)
-        @info "special case ≈ or ≉"
+        #@info "special case ≈ or ≉"
         testret = _result_approx_specialcase(ex, kws, source, negate)
         quoted_ex = ex
     elseif _is_displayed_func(ex, kws)
-        @info "displayed func"
+        #@info "displayed func"
         testret = _result_displayed_func(ex, kws, source, negate)
         quoted_ex = ex
     elseif _is_anonymous_map(ex, kws)
-        @info "mapped anonymous"
+        #@info "mapped anonymous"
         testret = _result_anonymous_map(ex, kws, source, negate)
         quoted_ex = ex
     else 
-        @info "fallback"
+        #@info "fallback"
         testret = _result_fallback(orig_ex, kws, source)
         quoted_ex = ex
     end
@@ -432,7 +440,8 @@ end
 
 """
     @test_all ex
-    @test_all 
+
+Test that all(ex) true.
 """
 macro test_all(ex, kws...) #TODO(tpapalex): add 'quoted' argument
     kws, broken, skip = extract_broken_skip_keywords(kws...)
@@ -451,7 +460,35 @@ macro test_all(ex, kws...) #TODO(tpapalex): add 'quoted' argument
     end
 end
 
-a = [1,2,3]
-b = [1,2,5]
-@test_all a == error()
+_is_logical(ex) = isa(ex, Expr) && ex.head ∈ LOGICAL_OPS && length(ex.args) == 2
+
+function _recurse_vectorize_logical!(ex)
+    if _is_logical(ex)
+        if !_is_vectorized_op(ex.head)
+            ex.head = Symbol(:., ex.head)
+        end
+        _recurse_vectorize_logical!(ex.args[1])
+        _recurse_vectorize_logical!(ex.args[2])
+    end
+    return ex
+end
+
+function _recurse_stringify_logical(ex, toplevel=true)
+    if _is_logical(ex)
+        lhs = _recurse_stringify_logical(ex.args[1], false)
+        rhs = _recurse_stringify_logical(ex.args[2], false)
+        return lhs * " " * string(ex.head) * " " * rhs
+    elseif !isa(ex, Expr)
+        return string(ex)
+    elseif (ex.head === :call || ex.head === :.) && Base.operator_precedence(ex.args[1]) == 0
+        return string(ex)
+    elseif toplevel
+        return string(ex)
+    else
+        return "(" * string(ex) * ")"
+    end
+end
+
+
+
 
