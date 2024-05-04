@@ -137,7 +137,7 @@
             :(g(x, a=1; b=1)) => :(g(x, a=1; b=1)),
             :(g.(x)) => :(g.(x)),
             :(g.(x, a=1; b=1)) => :(g.(x, a=1; b=1)),
-            # Not keywordized because already parameter
+            # Not keywordized because already parameter or splat arguments
             :(≈(a, b, atol=1)) => :(≈(a, b, atol=1)),
             :(isnan(x, a=1)) => :(isnan(x, a=1)), 
             :(isnan.(x, a=1)) => :(isnan.(x, a=1)), 
@@ -173,11 +173,14 @@
             :(≉(a, b, a=1)) => :argsapprox,
             :(.≈(a, b; atol=1)) => :argsapprox,
             :(.≉(a, b; atol=1)) => :argsapprox,
+            :(≈(a, b..., atol=1)) => :fallback, # splat argument
+            :(≉(a, b, c, atol=1)) => :fallback, # splat argument
             # Displayable function
             :(isnan(x)) => :displaycall,
             :(isreal.(x)) => :displaycall,
             :(occursin("a", b)) => :displaycall,
             :(contains.(r"a", "b")) => :displaycall,
+            :(isapprox(a..., atol=1)) => :fallback, # splat argument
             # Fall back
             :(1) => :fallback, 
             :(1:3) => :fallback,
@@ -187,7 +190,6 @@
             :(Ref(1:3)) => :fallback,
             :(a) => :fallback,
             :(g(x)) => :fallback,
-            :(isapprox(a..., atol=1)) => :fallback,
         ]
 
         @testset "is_$res($ex)" for (ex, res) in cases
@@ -208,39 +210,57 @@
         end
     end
 
-    @testset "update_terms_simple" begin
-
+    @testset "update_escaped! - fallback" begin
+        # Cases as outmost expression
         cases = [
-            # Negation
-            :(!a)  => :negation => ([:a], "!a", "!{1:s}"),
-            :(.!a) => :negation => ([:a], ".!a", "!{1:s}"),
-            # Logical
-            :(a && b)  => :logical => ([:a, :b], "(a && b)",  "({1:s} && {2:s})"),
-            :(a .|| b) => :logical => ([:a, :b], "(a .|| b)", "({1:s} || {2:s})"),
-            # Comparison
-            :(a == b)  => :comparison => ([:a, :b], "(a == b)",  "({1:s} == {2:s})"),
-            :(a .≈ b)  => :comparison => ([:a, :b], "(a .≈ b)",  "({1:s} ≈ {2:s})"),
-            :(a <: b)  => :comparison => ([:a, :b], "(a <: b)",  "({1:s} <: {2:s})"),
-            :(a .∈ b)  => :comparison => ([:a, :b], "(a .∈ b)",  "({1:s} ∈ {2:s})"),
-            # 
-
-            # Fall back
-            :(a) => :fallback,
-            :(g(x)) => :fallback,
-            :(isapprox(a..., atol=1)) => :fallback,
-            # Complicated
-            :(a && b || (2 * x + 1 == !a) && !isapprox(y - z, 1, atol=1)) => :logical
-            :(a .&& b .|| (2 .* x .+ 1 .== .!a) .&& .!isapprox.(y .- z, [1,2,3], atol=1)) => :logical
+            :(1),
+            :(a), 
+            :([1,2]), 
+            :(g(x)), 
+            :(g.(x,a=1;b=b)), 
+            :(a .+ b),
         ]
 
-        @testset "$(ex)" for (ex, res) in cases
-            ex = TM._preprocess(ex)
-            if res === :fallback
-                _, str_ex, _ = TM.update_terms_fallback!([], deepcopy(ex))
-                @test Meta.parse(str_ex) == ex
-            end
+        @testset "$ex" for ex in cases
+            @test TM.is_fallback(ex)
+
+            args, kwargs = [], []
+            mod_ex, str_ex, fmt_ex = TM.update_escaped!(args, kwargs, deepcopy(ex), isoutmost=true)
+            
+            @test mod_ex == :(ARG[1])
+            @test str_ex == string(ex)
+            @test fmt_ex == "{1:s}"
+            @test args == [esc(ex)]
+            @test kwargs == []
         end
     end
+
+    
+
+    # @testset "update_terms_simple" begin
+
+    #     cases = [
+    #         # Negation
+    #         :(!a)  => :negation => ([:a], "!a", "!{1:s}"),
+    #         :(.!a) => :negation => ([:a], ".!a", "!{1:s}"),
+    #         # Logical
+    #         :(a && b)  => :logical => ([:a, :b], "(a && b)",  "({1:s} && {2:s})"),
+    #         :(a .|| b) => :logical => ([:a, :b], "(a .|| b)", "({1:s} || {2:s})"),
+    #         # Comparison
+    #         :(a == b)  => :comparison => ([:a, :b], "(a == b)",  "({1:s} == {2:s})"),
+    #         :(a .≈ b)  => :comparison => ([:a, :b], "(a .≈ b)",  "({1:s} ≈ {2:s})"),
+    #         :(a <: b)  => :comparison => ([:a, :b], "(a <: b)",  "({1:s} <: {2:s})"),
+    #         :(a .∈ b)  => :comparison => ([:a, :b], "(a .∈ b)",  "({1:s} ∈ {2:s})"),
+    #     ]
+
+    #     @testset "$(ex)" for (ex, res) in cases
+    #         ex = TM._preprocess(ex)
+    #         if res === :fallback
+    #             _, str_ex, _ = TM.update_terms_fallback!([], deepcopy(ex))
+    #             @test Meta.parse(str_ex) == ex
+    #         end
+    #     end
+    # end
      
 
     # @testset "@test_all" begin
