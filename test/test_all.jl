@@ -210,6 +210,80 @@
         end
     end
 
+    @testset "update_escaped! - negation" begin
+        cases = [
+            :(!a) =>  (:(!ARG[1]),  "!a",  "!{1:s}"), 
+            :(.!a) => (:(.!ARG[1]), ".!a", "!{1:s}"),
+        ]
+
+        @testset "$ex" for (ex, res) in cases
+            res_mod_ex, res_str_ex, res_fmt_ex = res
+            ex, res_mod_ex = TM._preprocess(ex), TM._preprocess(res_mod_ex)
+            
+            @test TM.is_negation(ex)
+
+            args, kwargs = [], []
+            mod_ex, str_ex, fmt_ex = TM.update_escaped!(args, kwargs, deepcopy(ex), isoutmost=true)
+            @test res_mod_ex == mod_ex
+            @test res_str_ex == str_ex
+            @test res_fmt_ex == fmt_ex
+            @test args == [esc(:a)]
+            @test kwargs == []
+        end
+    end
+
+
+    @testset "update_escaped! - logical" begin
+        cases = [
+            :(a && b)         =>  (:(ARG[1]  && ARG[2]),             [:a, :b],     "a && b",        "{1:s} && {2:s}"),
+            :(a .&& b)        =>  (:(ARG[1] .&& ARG[2]),             [:a, :b],     "a .&& b",       "{1:s} && {2:s}"),
+            :(a && b || c)    =>  (:(ARG[1]  && ARG[2]  || ARG[3]),  [:a, :b, :c], "a && b || c",   "{1:s} && {2:s} || {3:s}"),
+            :(a .&& b .|| c)  =>  (:(ARG[1] .&& ARG[2] .|| ARG[3]),  [:a, :b, :c], "a .&& b .|| c", "{1:s} && {2:s} || {3:s}"),
+        ]
+
+        @testset "$ex" for (ex, res) in cases
+            res_mod_ex, res_args, res_str_ex, res_fmt_ex = res
+            ex, res_mod_ex = TM._preprocess(ex), TM._preprocess(res_mod_ex)
+            res_args = esc.(res_args)
+
+            @test TM.is_logical(ex) == TM.is_logical(res_mod_ex)
+
+            args, kwargs = [], []
+            mod_ex, str_ex, fmt_ex = TM.update_escaped!(args, kwargs, deepcopy(ex), isoutmost=true)
+            @test res_mod_ex == mod_ex
+            @test res_str_ex == res_str_ex
+            @test res_fmt_ex == fmt_ex
+            @test args == res_args
+            @test kwargs == []
+        end
+    end
+
+    @testset "update_escaped! - comparison" begin
+        cases = [
+            :(a == b)       => (:(ARG[1] == ARG[2]),            "{1:s} == {2:s}",          [:a, :b]),
+            :(a .∈ b)       => (:(ARG[1] .∈ ARG[2]),            "{1:s} ∈ {2:s}",           [:a, :b]),
+            :(a ≈ b .> c)   => (:(ARG[1] ≈ ARG[2] .> ARG[3]),   "{1:s} ≈ {2:s} > {3:s}",   [:a, :b, :c]),
+            :(a <: b .<: c) => (:(ARG[1] <: ARG[2] .<: ARG[3]), "{1:s} <: {2:s} <: {3:s}", [:a, :b, :c]),
+        ]
+
+        @testset "$ex" for (ex, res) in cases
+            res_mod_ex, res_fmt_ex, res_args = res
+            ex, res_mod_ex = TM._preprocess(ex), TM._preprocess(res_mod_ex)
+
+            @test TM.is_comparison(ex)
+            @test TM.is_comparison(res_mod_ex)
+
+            args, kwargs = [], []
+            mod_ex, str_ex, fmt_ex = TM.update_escaped!(args, kwargs, deepcopy(ex), isoutmost=true)
+            @test mod_ex == res_mod_ex
+            @test str_ex == string(ex)
+            @test fmt_ex == res_fmt_ex
+            @test args == esc.(res_args)
+            @test kwargs == []
+        end
+
+
+    end
     @testset "update_escaped! - fallback" begin
         # Cases as outmost expression
         cases = [
@@ -222,6 +296,7 @@
         ]
 
         @testset "$ex" for ex in cases
+            ex = TM._preprocess(ex)
             @test TM.is_fallback(ex)
 
             args, kwargs = [], []
@@ -234,8 +309,6 @@
             @test kwargs == []
         end
     end
-
-    
 
     # @testset "update_terms_simple" begin
 

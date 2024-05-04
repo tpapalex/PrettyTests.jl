@@ -306,12 +306,12 @@ end
 
 function update_escaped_logical!(args, kwargs, ex; isoutmost=false)
     # Recursively update terms for both arguments
-    ex.args[1], str_arg1, fmt_arg1, _ = update_terms!(args, kwargs, ex.args[1])
-    ex.args[2], str_arg2, fmt_arg2, _ = update_terms!(args, kwargs, ex.args[2])
+    ex.args[1], str_arg1, fmt_arg1, _ = update_escaped!(args, kwargs, ex.args[1], isoutmost=is_logical(ex.args[1]))
+    ex.args[2], str_arg2, fmt_arg2, _ = update_escaped!(args, kwargs, ex.args[2], isoutmost=is_logical(ex.args[2]))
 
     # Paren always needed for logical expressions
     str_ex = str_arg1 * " " * string(ex.head) * " " * str_arg2
-    fmt_ex = fmt_arg1 * " " * _string_unvec(ex.head) * " " *  fmt_arg2
+    fmt_ex = fmt_arg1 * " " * string_unvec(ex.head) * " " *  fmt_arg2
 
     # Paren always unless outmost expression
     if !isoutmost
@@ -324,12 +324,12 @@ end
 function update_escaped_comparison!(args, kwargs, ex; isoutmost=false)
     # Recursively update every other term:
     str_ex, fmt_ex = "", ""
-    for i in 1:length(args)
+    for i in 1:length(ex.args)
         if i % 2 == 1 # Term to be recursively updated
-            ex.args[i], str_arg, fmt_arg = update_terms!(args, kwargs, ex.args[i])
+            ex.args[i], str_arg, fmt_arg = update_escaped!(args, kwargs, ex.args[i])
             str_ex *= str_arg
             fmt_ex *= fmt_arg
-        else
+        else # Operator
             str_ex *= " " * string(ex.args[i]) * " "
             fmt_ex *= " " * string_unvec(ex.args[i]) * " "
         end
