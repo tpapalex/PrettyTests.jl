@@ -42,6 +42,7 @@ end
 
 add_keywords!(ex) = ex
 function add_keywords!(ex, kws)
+    
     if !(isa(ex, Expr) && (ex.head === :. || ex.head === :call))
         error("invalid test macro call: @test_all $ex cannot take keyword arguments")
     end
@@ -77,8 +78,7 @@ function _preprocess(ex)
             Base.operator_precedence(ex.args[1]) == COMPARISON_PREC
         ) &&
         length(ex.args) == 3 && # Excludes cases where kws were added
-        !_is_splat(ex.args[2]) && 
-        !_is_splat(ex.args[3])
+        !any(a -> isa(a, Expr) && a.head ∈ (:kw, :parameters, :...), ex.args)
 
         return Expr(:comparison, ex.args[2], ex.args[1], ex.args[3])
 
@@ -157,8 +157,9 @@ function is_argsapprox(ex)
         ex.head === :call && 
         ex.args[1] ∈ OPS_APPROX
 
-        # Must also have exactly two positional arguments, non-splat (plus operator)
-        n_args = length(ex.args) - sum(a -> isa(a, Expr) && a.head ∈ (:kw, :parameters), ex.args)
+        # Must also have exactly two positional arguments
+        is_not_positional = a -> isa(a, Expr) && a.head ∈ (:kw, :parameters, :...)
+        n_args = length(ex.args) - sum(is_not_positional, ex.args; init=0)
         if n_args != 3 
             return false
         end
@@ -184,7 +185,8 @@ function is_displaycall(ex)
         # Check for non-displayable parameters/kwargs
         args = ex.head === :call ? ex.args[2:end] : ex.args[2].args
 
-        n_args = length(args) - sum(a -> isa(a, Expr) && a.head ∈ (:kw, :parameters), args)
+        is_not_positional = a -> isa(a, Expr) && a.head ∈ (:kw, :parameters, :...)
+        n_args = length(args) - sum(is_not_positional, args; init=0)
         if n_args == 0
             return false
         end
@@ -469,6 +471,36 @@ function update_escaped_fallback!(args, ex; isoutmost::Bool=false)
 
     return ex, str_ex, fmt_ex, ""
 end
+
+
+#################### Core macro ###################
+function get_test_all_result(ex, kws...)
+    
+    ex, negate = extract_negation(ex)
+    add_keywords!(ex, kws)
+
+    escaped_args = []
+    mod_ex, str_ex, fmt_ex, fmt_kw = update_terms!(escaped_args, ex, isoutmost=true)
+
+    if negate
+        fmt_ex = "!(" * fmt_ex * ")"
+    end
+    fmt_ex *= " " * fmt_kw
+    fmt_ex = FormatExpr(fmt_ex)
+
+
+    quote 
+        let ARG = [$(escaped_args...)]
+            bitarray = eval($mod_ex)
+        end
+    end
+end
+   
+
+
+
+
+
 
 
 function _string_idxs_justify(idxs) 

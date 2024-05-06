@@ -167,13 +167,17 @@
             :(≉(a, b, a=1)) => :argsapprox,
             :(.≈(a, b; atol=1)) => :argsapprox,
             :(.≉(a, b; atol=1)) => :argsapprox,
+            :(≈()) => :fallback, # incorrect number of positional arguments
+            :(.≈(a, atol=1)) => :fallback, # incorrect number of positional arguments
+            :(≉(a, b, c, atol=1)) => :fallback, # incorrect number of positional arguments
             :(≈(a, b..., atol=1)) => :fallback, # splat argument
-            :(≉(a, b, c, atol=1)) => :fallback, # splat argument
             # Displayable function
             :(isnan(x)) => :displaycall,
             :(isreal.(x)) => :displaycall,
             :(occursin("a", b)) => :displaycall,
             :(contains.(r"a", "b")) => :displaycall,
+            :(isinf()) => :fallback, # no positional arguments
+            :(isnan.(a=1)) => :fallback, # no positional arguments
             :(isapprox(a..., atol=1)) => :fallback, # splat argument
             # Fall back
             :(1) => :fallback, 
