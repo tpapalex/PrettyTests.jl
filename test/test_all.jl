@@ -1,12 +1,5 @@
 @testset "vecop.jl" begin
 
-    @testset "_is_vecop(sym)" begin
-        @test TM._is_vecop(:(==)) === false
-        @test TM._is_vecop(:.==) === true
-        @test TM._is_vecop(:>) === false
-        @test TM._is_vecop(:.≈) === true
-    end
-
     @testset "extract_negation(ex)" begin
         cases = [
             :(a),
@@ -119,10 +112,6 @@
             :(.≈(a,b;atol=1)) => :(.≈(a,b,atol=1)),
             :(isapprox(a,b;atol=1)) => :(isapprox(a,b,atol=1)),
             :(isapprox.(a,b;atol=1)) => :(isapprox.(a,b,atol=1)),
-            :(isnan(;a=1)) => :(isnan(a=1)),
-            :(isnan.(;a=1)) => :(isnan.(a=1)),
-            :(isnan(;a=1,b=1)) => :(isnan(a=1,b=1)),
-            :(isnan.(;a=1,b=1)) => :(isnan.(a=1,b=1)),
             :(isnan(x;a=1)) => :(isnan(x,a=1)),
             :(isnan.(x;a=1)) => :(isnan.(x,a=1)),
             :(isnan(x;a=1,b=1)) => :(isnan(x,a=1,b=1)),
@@ -137,6 +126,11 @@
             :(g(x, a=1; b=1)) => :(g(x, a=1; b=1)),
             :(g.(x)) => :(g.(x)),
             :(g.(x, a=1; b=1)) => :(g.(x, a=1; b=1)),
+            # Not keywordized because no positional arguments
+            :(isnan(;a=1)) => :(isnan(;a=1)),
+            :(isnan.(;a=1)) => :(isnan.(;a=1)),
+            :(isnan(;a=1,b=1)) => :(isnan(;a=1,b=1)),
+            :(isnan.(a=1;b=1)) => :(isnan.(a=1;b=1)),
             # Not keywordized because already parameter or splat arguments
             :(≈(a, b, atol=1)) => :(≈(a, b, atol=1)),
             :(isnan(x, a=1)) => :(isnan(x, a=1)), 
@@ -151,7 +145,7 @@
      end
 
 
-    @testset "is_...(ex)" begin
+    @testset "expression classifiers: is...(ex)" begin
 
         cases = [
             # Negation
@@ -210,103 +204,323 @@
         end
     end
 
-    @testset "update_escaped! - negation" begin
-        cases = [
-            :(!a) =>  (:(!ARG[1]),  "!a",  "!{1:s}"), 
-            :(.!a) => (:(.!ARG[1]), ".!a", "!{1:s}"),
-        ]
+    @testset "update_escaped!()" begin 
+    
+        @testset "negation" begin
+            cases = [
+                :(!a) =>  (:(!ARG[1]),  "!a",  "!{1:s}"), 
+                :(.!a) => (:(.!ARG[1]), ".!a", "!{1:s}"),
+            ]
 
-        @testset "$ex" for (ex, res) in cases
-            res_mod_ex, res_str_ex, res_fmt_ex = res
-            ex, res_mod_ex = TM._preprocess(ex), TM._preprocess(res_mod_ex)
-            
-            @test TM.is_negation(ex)
+            @testset "$ex" for (ex, res) in cases
+                # Pre-process and get expected results
+                res_mod_ex, res_str_ex, res_fmt_ex = res
+                ex, res_mod_ex = TM._preprocess(ex), TM._preprocess(res_mod_ex)
+                
+                @test TM.is_negation(ex)
+                @test TM.is_negation(res_mod_ex)
 
-            args, kwargs = [], []
-            mod_ex, str_ex, fmt_ex = TM.update_escaped!(args, kwargs, deepcopy(ex), isoutmost=true)
-            @test res_mod_ex == mod_ex
-            @test res_str_ex == str_ex
-            @test res_fmt_ex == fmt_ex
-            @test args == [esc(:a)]
-            @test kwargs == []
-        end
-    end
+                # Updated escaped terms with outmost = true
+                args = []
+                mod_ex, str_ex, fmt_ex, fmt_kw = TM.update_escaped!(args, deepcopy(ex), isoutmost=true)
+                @test mod_ex == res_mod_ex
+                @test str_ex == res_str_ex
+                @test fmt_ex == res_fmt_ex
+                @test fmt_kw == ""
+                @test args   == [esc(:a)]
 
-
-    @testset "update_escaped! - logical" begin
-        cases = [
-            :(a && b)         =>  (:(ARG[1]  && ARG[2]),             [:a, :b],     "a && b",        "{1:s} && {2:s}"),
-            :(a .&& b)        =>  (:(ARG[1] .&& ARG[2]),             [:a, :b],     "a .&& b",       "{1:s} && {2:s}"),
-            :(a && b || c)    =>  (:(ARG[1]  && ARG[2]  || ARG[3]),  [:a, :b, :c], "a && b || c",   "{1:s} && {2:s} || {3:s}"),
-            :(a .&& b .|| c)  =>  (:(ARG[1] .&& ARG[2] .|| ARG[3]),  [:a, :b, :c], "a .&& b .|| c", "{1:s} && {2:s} || {3:s}"),
-        ]
-
-        @testset "$ex" for (ex, res) in cases
-            res_mod_ex, res_args, res_str_ex, res_fmt_ex = res
-            ex, res_mod_ex = TM._preprocess(ex), TM._preprocess(res_mod_ex)
-            res_args = esc.(res_args)
-
-            @test TM.is_logical(ex) == TM.is_logical(res_mod_ex)
-
-            args, kwargs = [], []
-            mod_ex, str_ex, fmt_ex = TM.update_escaped!(args, kwargs, deepcopy(ex), isoutmost=true)
-            @test res_mod_ex == mod_ex
-            @test res_str_ex == res_str_ex
-            @test res_fmt_ex == fmt_ex
-            @test args == res_args
-            @test kwargs == []
-        end
-    end
-
-    @testset "update_escaped! - comparison" begin
-        cases = [
-            :(a == b)       => (:(ARG[1] == ARG[2]),            "{1:s} == {2:s}",          [:a, :b]),
-            :(a .∈ b)       => (:(ARG[1] .∈ ARG[2]),            "{1:s} ∈ {2:s}",           [:a, :b]),
-            :(a ≈ b .> c)   => (:(ARG[1] ≈ ARG[2] .> ARG[3]),   "{1:s} ≈ {2:s} > {3:s}",   [:a, :b, :c]),
-            :(a <: b .<: c) => (:(ARG[1] <: ARG[2] .<: ARG[3]), "{1:s} <: {2:s} <: {3:s}", [:a, :b, :c]),
-        ]
-
-        @testset "$ex" for (ex, res) in cases
-            res_mod_ex, res_fmt_ex, res_args = res
-            ex, res_mod_ex = TM._preprocess(ex), TM._preprocess(res_mod_ex)
-
-            @test TM.is_comparison(ex)
-            @test TM.is_comparison(res_mod_ex)
-
-            args, kwargs = [], []
-            mod_ex, str_ex, fmt_ex = TM.update_escaped!(args, kwargs, deepcopy(ex), isoutmost=true)
-            @test mod_ex == res_mod_ex
-            @test str_ex == string(ex)
-            @test fmt_ex == res_fmt_ex
-            @test args == esc.(res_args)
-            @test kwargs == []
+                # Updated escaped terms with outmost = false
+                args = []
+                mod_ex, str_ex, fmt_ex, fmt_kw = TM.update_escaped!(args, deepcopy(ex), isoutmost=false)
+                @test mod_ex == res_mod_ex
+                @test str_ex == res_str_ex 
+                @test fmt_ex == res_fmt_ex
+                @test fmt_kw == ""
+                @test args   == [esc(:a)]
+            end
         end
 
 
-    end
-    @testset "update_escaped! - fallback" begin
-        # Cases as outmost expression
-        cases = [
-            :(1),
-            :(a), 
-            :([1,2]), 
-            :(g(x)), 
-            :(g.(x,a=1;b=b)), 
-            :(a .+ b),
-        ]
+        @testset "logical" begin
+            cases = [
+                :(a  && b) => (:(ARG[1] && ARG[2]),                           
+                               [:a, :b],            
+                               "a && b",                
+                               "{1:s} && {2:s}"),   
+                :(a .|| b) => (:(ARG[1] .|| ARG[2]),                           
+                               [:a, :b],           
+                               "a .|| b",               
+                               "{1:s} || {2:s}"),   
+                :(a  && b  && c  || d) => (:(ARG[1]  && ARG[2]  && ARG[3]  || ARG[4]), 
+                                        [:a, :b, :c, :d],
+                                        "a && b && c || d",
+                                        "{1:s} && {2:s} && {3:s} || {4:s}"),
+                :(a .&& b .&& c .|| d) => (:(ARG[1] .&& ARG[2] .&& ARG[3] .|| ARG[4]), 
+                                        [:a, :b, :c, :d],
+                                        "a .&& b .&& c .|| d",
+                                        "{1:s} && {2:s} && {3:s} || {4:s}"),
+            ]
 
-        @testset "$ex" for ex in cases
-            ex = TM._preprocess(ex)
-            @test TM.is_fallback(ex)
+            @testset "$ex" for (ex, res) in cases
+                # Pre-process and get expected results
+                res_mod_ex, res_args, res_str_ex, res_fmt_ex = res
+                res_args = esc.(res_args)
+                ex, res_mod_ex = TM._preprocess(ex), TM._preprocess(res_mod_ex)
 
-            args, kwargs = [], []
-            mod_ex, str_ex, fmt_ex = TM.update_escaped!(args, kwargs, deepcopy(ex), isoutmost=true)
-            
-            @test mod_ex == :(ARG[1])
-            @test str_ex == string(ex)
-            @test fmt_ex == "{1:s}"
-            @test args == [esc(ex)]
-            @test kwargs == []
+                @test TM.is_logical(ex)
+                @test TM.is_logical(res_mod_ex)
+
+                # Updated escaped terms with outmost = true
+                args = []
+                mod_ex, str_ex, fmt_ex, fmt_kw = TM.update_escaped!(args, deepcopy(ex), isoutmost=true)
+                @test mod_ex == res_mod_ex
+                @test str_ex == res_str_ex
+                @test fmt_ex == res_fmt_ex
+                @test args   == res_args
+                @test fmt_kw == ""
+
+                # Updated escaped terms with outmost = false
+                args = []
+                mod_ex, str_ex, fmt_ex, fmt_kw = TM.update_escaped!(args, deepcopy(ex), isoutmost=false)
+                @test mod_ex == res_mod_ex
+                @test str_ex == "(" * res_str_ex * ")"
+                @test fmt_ex == "(" * res_fmt_ex * ")"
+                @test args   == res_args
+                @test fmt_kw == ""
+            end
+        end
+
+        @testset "comparison" begin
+            cases = [
+                :(a == b) => (:(ARG[1] == ARG[2]),            
+                              "{1:s} == {2:s}",
+                              [:a, :b]),
+                :(a .∈ b) => (:(ARG[1] .∈ ARG[2]),            
+                              "{1:s} ∈ {2:s}",
+                              [:a, :b]),
+                :(a ≈ b .> c)   => (:(ARG[1] ≈ ARG[2] .> ARG[3]),   
+                                    "{1:s} ≈ {2:s} > {3:s}",
+                                    [:a, :b, :c]),
+                :(a <: b .<: c) => (:(ARG[1] <: ARG[2] .<: ARG[3]), 
+                                    "{1:s} <: {2:s} <: {3:s}",
+                                    [:a, :b, :c]),
+            ]
+
+            @testset "$ex" for (ex, res) in cases
+                # Pre-process and get expected results
+                res_mod_ex, res_fmt_ex, res_args = res
+                ex, res_mod_ex = TM._preprocess(ex), TM._preprocess(res_mod_ex)
+                res_str_ex = string(ex)
+
+                @test TM.is_comparison(ex)
+                @test TM.is_comparison(res_mod_ex)
+
+                # Updated escaped terms with outmost = true
+                args = []
+                mod_ex, str_ex, fmt_ex, fmt_kw = TM.update_escaped!(args, deepcopy(ex), isoutmost=true)
+                @test mod_ex == res_mod_ex
+                @test str_ex == res_str_ex
+                @test fmt_ex == res_fmt_ex
+                @test args   == esc.(res_args)
+                @test fmt_kw == ""
+
+                # Updated escaped terms with outmost = false
+                args = []
+                mod_ex, str_ex, fmt_ex, fmt_kw = TM.update_escaped!(args, deepcopy(ex), isoutmost=false)
+                @test mod_ex == res_mod_ex
+                @test str_ex == "(" * res_str_ex * ")"
+                @test fmt_ex == "(" * res_fmt_ex * ")"
+                @test args   == esc.(res_args)
+                @test fmt_kw == ""
+            end
+        end
+
+        @testset "argsapprox" begin
+            cases_outmost = [
+                :(≈(a, b, atol=TOL)) => (
+                    :(≈(ARG[1], ARG[2], atol=ARG[3].x)), 
+                    "≈(a, b, atol = TOL)",
+                    "{1:s} ≈ {2:s}",
+                    "with atol = {3:s}",
+                    [:a, :b, :(Ref(TOL))],
+                ),
+                :(.≉(a, b, rtol=100*1e-8, atol=TOL)) => (
+                    :(.≉(ARG[1], ARG[2], rtol=ARG[3].x, atol=ARG[4].x)), 
+                    ".≉(a, b, rtol = 100 * 1.0e-8, atol = TOL)",
+                    "{1:s} ≉ {2:s}", 
+                    "with rtol = {3:s}, atol = {4:s}", 
+                    [:a, :b, :(Ref(100*1e-8)), :(Ref(TOL))],
+                )
+            ]
+
+            @testset "(outer) $ex" for (ex, res) in cases_outmost
+                # Pre-process and get expected results
+                res_mod_ex, res_str_ex, res_fmt_ex, res_fmt_kw, res_args = res
+                ex, res_mod_ex = TM._preprocess(ex), TM._preprocess(res_mod_ex)
+                res_str_ex = string(ex)
+
+                @test TM.is_argsapprox(ex)
+                @test TM.is_argsapprox(res_mod_ex)
+
+                # Updated escaped terms with outmost = true
+                args = []
+                mod_ex, str_ex, fmt_ex, fmt_kw = TM.update_escaped!(args, deepcopy(ex), isoutmost=true)
+                @test mod_ex == res_mod_ex
+                @test str_ex == res_str_ex
+                @test fmt_ex == res_fmt_ex
+                @test args   == esc.(res_args)
+                @test fmt_kw == res_fmt_kw
+            end            
+
+            cases_inner = [
+                :(≈(a, b, atol=TOL)) => (
+                    :(≈(ARG[1], ARG[2], atol=ARG[3].x)), 
+                    "≈(a, b, atol = TOL)",
+                    "≈({1:s}, {2:s}, atol = {3:s})", 
+                    "",
+                    [:a, :b, :(Ref(TOL))],
+                ),
+                :(.≉(a, b, rtol=100*1e-8, atol=TOL)) => (
+                    :(.≉(ARG[1], ARG[2], rtol=ARG[3].x, atol=ARG[4].x)), 
+                    ".≉(a, b, rtol = 100 * 1.0e-8, atol = TOL)",
+                    "≉({1:s}, {2:s}, rtol = {3:s}, atol = {4:s})", 
+                    "",
+                    [:a, :b, :(Ref(100*1e-8)), :(Ref(TOL))],
+                )
+            ]
+
+            @testset "(inner) $ex" for (ex, res) in cases_inner
+                # Pre-process and get expected results
+                res_mod_ex, res_str_ex, res_fmt_ex, res_fmt_kw, res_args = res
+                ex, res_mod_ex = TM._preprocess(ex), TM._preprocess(res_mod_ex)
+                res_str_ex = string(ex)
+
+                @test TM.is_argsapprox(ex)
+                @test TM.is_argsapprox(res_mod_ex)
+
+                # Updated escaped terms with outmost = true
+                args = []
+                mod_ex, str_ex, fmt_ex, fmt_kw = TM.update_escaped!(args, deepcopy(ex), isoutmost=false)
+                @test mod_ex == res_mod_ex
+                @test str_ex == res_str_ex
+                @test fmt_ex == res_fmt_ex
+                @test args   == esc.(res_args)
+                @test fmt_kw == res_fmt_kw
+            end   
+        end
+
+
+        @testset "displaycall" begin
+            cases_outmost = [
+                :(isnan(a)) => (
+                    :(isnan(ARG[1])), 
+                    "isnan(a)",
+                    "isnan({1:s})",
+                    "",
+                    [:a],
+                ),
+                :(isapprox(a, b, atol=TOL)) => (
+                    :(isapprox(ARG[1], ARG[2], atol=ARG[3].x)), 
+                    "isapprox(a, b, atol = TOL)",
+                    "isapprox({1:s}, {2:s})",
+                    "with atol = {3:s}",
+                    [:a, :b, :(Ref(TOL))],
+                ),
+                :(isapprox.(a, b, rtol=100*1e-8, atol=TOL)) => (
+                    :(isapprox.(ARG[1], ARG[2], rtol=ARG[3].x, atol=ARG[4].x)), 
+                    "isapprox.(a, b, rtol = 100 * 1.0e-8, atol = TOL)",
+                    "isapprox({1:s}, {2:s})", 
+                    "with rtol = {3:s}, atol = {4:s}", 
+                    [:a, :b, :(Ref(100*1e-8)), :(Ref(TOL))],
+                ),
+            ]
+
+            @testset "(outer) $ex" for (ex, res) in cases_outmost
+                # Pre-process and get expected results
+                res_mod_ex, res_str_ex, res_fmt_ex, res_fmt_kw, res_args = res
+                ex, res_mod_ex = TM._preprocess(ex), TM._preprocess(res_mod_ex)
+                res_str_ex = string(ex)
+
+                @test TM.is_displaycall(ex)
+                @test TM.is_displaycall(res_mod_ex)
+
+                # Updated escaped terms with outmost = true
+                args = []
+                mod_ex, str_ex, fmt_ex, fmt_kw = TM.update_escaped!(args, deepcopy(ex), isoutmost=true)
+                @test mod_ex == res_mod_ex
+                @test str_ex == res_str_ex
+                @test fmt_ex == res_fmt_ex
+                @test args   == esc.(res_args)
+                @test fmt_kw == res_fmt_kw
+            end            
+
+            cases_inner = [
+                :(isnan(a)) => (
+                    :(isnan(ARG[1])), 
+                    "isnan(a)",
+                    "isnan({1:s})",
+                    "",
+                    [:a],
+                ),
+                :(isapprox(a, b, atol=TOL)) => (
+                    :(isapprox(ARG[1], ARG[2], atol=ARG[3].x)), 
+                    "isapprox(a, b, atol = TOL)",
+                    "isapprox({1:s}, {2:s}, atol = {3:s})",
+                    "",
+                    [:a, :b, :(Ref(TOL))],
+                ),
+                :(isapprox.(a, b, rtol=100*1e-8, atol=TOL)) => (
+                    :(isapprox.(ARG[1], ARG[2], rtol=ARG[3].x, atol=ARG[4].x)), 
+                    "isapprox.(a, b, rtol = 100 * 1.0e-8, atol = TOL)",
+                    "isapprox({1:s}, {2:s}, rtol = {3:s}, atol = {4:s})", 
+                    "", 
+                    [:a, :b, :(Ref(100*1e-8)), :(Ref(TOL))],
+                ),
+            ]
+
+            @testset "(inner) $ex" for (ex, res) in cases_inner
+                # Pre-process and get expected results
+                res_mod_ex, res_str_ex, res_fmt_ex, res_fmt_kw, res_args = res
+                ex, res_mod_ex = TM._preprocess(ex), TM._preprocess(res_mod_ex)
+                res_str_ex = string(ex)
+
+                @test TM.is_displaycall(ex)
+                @test TM.is_displaycall(res_mod_ex)
+
+                # Updated escaped terms with outmost = true
+                args = []
+                mod_ex, str_ex, fmt_ex, fmt_kw = TM.update_escaped!(args, deepcopy(ex), isoutmost=false)
+                @test mod_ex == res_mod_ex
+                @test str_ex == res_str_ex
+                @test fmt_ex == res_fmt_ex
+                @test args   == esc.(res_args)
+                @test fmt_kw == res_fmt_kw
+            end   
+        end
+
+        @testset "update_escaped! - fallback" begin
+            # Cases as outmost expression
+            cases = [
+                :(1),
+                :(a), 
+                :([1,2]), 
+                :(g(x)), 
+                :(g.(x,a=1;b=b)), 
+                :(a .+ b),
+            ]
+
+            @testset "$ex" for ex in cases
+                ex = TM._preprocess(ex)
+                @test TM.is_fallback(ex)
+
+                args = []
+                mod_ex, str_ex, fmt_ex = TM.update_escaped!(args, deepcopy(ex), isoutmost=true)
+                
+                @test mod_ex == :(ARG[1])
+                @test str_ex == string(ex)
+                @test fmt_ex == "{1:s}"
+                @test args == [esc(ex)]
+            end
         end
     end
 

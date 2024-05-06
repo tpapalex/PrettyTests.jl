@@ -184,6 +184,11 @@ function is_displaycall(ex)
         # Check for non-displayable parameters/kwargs
         args = ex.head === :call ? ex.args[2:end] : ex.args[2].args
 
+        n_args = length(args) - sum(a -> isa(a, Expr) && a.head ∈ (:kw, :parameters), args)
+        if n_args == 0
+            return false
+        end
+
         par_ex = args[1]
         if isa(par_ex, Expr) && par_ex.head === :parameters
             for a in par_ex.args
@@ -229,22 +234,12 @@ function is_mappable(ex, kws=())
 end
 
 
-#################### String creation ###################
-function requires_outer_parens(ex; isoutmost::Bool=false)
-
-end
-
+#################### Escaped args updaters ###################
 function string_unvec(x::Symbol) 
     sx = string(x)
     return sx[1] == '.' ? sx[2:end] : sx 
 end
-function string_unvec(x::Expr)
-    @assert ex.head === :call || ex.head === :.
-    return string(ex.args[1])
-end
 
-
-#################### Escaped args updaters ###################
 """
     update_escaped!(args, kwargs, ex; isoutmost=false)
 
@@ -275,27 +270,27 @@ arguments to.
 - `::String`: A string that can be used as a `FormatExpr` for pretty-printing keyword 
   arguments.
 """
-function update_escaped!(args, kwargs, ex; isoutmost=false)
+function update_escaped!(args, ex; isoutmost=false)
     # Pre-process the expression first, to normalize comparisons, fix keywords etc.
     ex = _preprocess(ex)
     if is_negation(ex)
-        return update_escaped_negation!(args, kwargs, ex; isoutmost=isoutmost)
+        return update_escaped_negation!(args, ex; isoutmost=isoutmost)
     elseif is_logical(ex)
-        return update_escaped_logical!(args, kwargs, ex; isoutmost=isoutmost)
+        return update_escaped_logical!(args, ex; isoutmost=isoutmost)
     elseif is_comparison(ex)
-        return update_escaped_comparison!(args, kwargs, ex; isoutmost=isoutmost)
+        return update_escaped_comparison!(args, ex; isoutmost=isoutmost)
     elseif is_argsapprox(ex)
-        return update_escaped_argsapprox!(args, kwargs, ex; isoutmost=isoutmost)
+        return update_escaped_argsapprox!(args, ex; isoutmost=isoutmost)
     elseif is_displaycall(ex)
-        return update_escaped_displaycall!(args, kwargs, ex; isoutmost=isoutmost)
+        return update_escaped_displaycall!(args, ex; isoutmost=isoutmost)
     else # is_fallback(ex)
-        return update_escaped_fallback!(args, kwargs, ex; isoutmost=isoutmost)
+        return update_escaped_fallback!(args, ex; isoutmost=isoutmost)
     end
 end
 
-function update_escaped_negation!(args, kwargs, ex; isoutmost=false)
+function update_escaped_negation!(args, ex; isoutmost=false)
     # Recursively update terms for single argument
-    ex.args[2], str_arg, fmt_arg, _ = update_escaped!(args, kwargs, ex.args[2]) 
+    ex.args[2], str_arg, fmt_arg = update_escaped!(args, ex.args[2]) 
 
     # No wrapping parenthese needed for negation, even if outmost
     str_ex = string(ex.args[1]) * str_arg
@@ -304,10 +299,11 @@ function update_escaped_negation!(args, kwargs, ex; isoutmost=false)
     return ex, str_ex, fmt_ex, ""
 end
 
-function update_escaped_logical!(args, kwargs, ex; isoutmost=false)
-    # Recursively update terms for both arguments
-    ex.args[1], str_arg1, fmt_arg1, _ = update_escaped!(args, kwargs, ex.args[1], isoutmost=is_logical(ex.args[1]))
-    ex.args[2], str_arg2, fmt_arg2, _ = update_escaped!(args, kwargs, ex.args[2], isoutmost=is_logical(ex.args[2]))
+function update_escaped_logical!(args, ex; isoutmost=false)
+    # Recursively update terms for both arguments. If a sub-term is also logical, it doesn't
+    # need to be parenthesized, so consider it "outmost".
+    ex.args[1], str_arg1, fmt_arg1 = update_escaped!(args, ex.args[1], isoutmost=is_logical(ex.args[1]))
+    ex.args[2], str_arg2, fmt_arg2 = update_escaped!(args, ex.args[2], isoutmost=is_logical(ex.args[2]))
 
     # Paren always needed for logical expressions
     str_ex = str_arg1 * " " * string(ex.head) * " " * str_arg2
@@ -321,12 +317,12 @@ function update_escaped_logical!(args, kwargs, ex; isoutmost=false)
     return ex, str_ex, fmt_ex, ""
 end
 
-function update_escaped_comparison!(args, kwargs, ex; isoutmost=false)
+function update_escaped_comparison!(args, ex; isoutmost=false)
     # Recursively update every other term:
     str_ex, fmt_ex = "", ""
     for i in 1:length(ex.args)
         if i % 2 == 1 # Term to be recursively updated
-            ex.args[i], str_arg, fmt_arg = update_escaped!(args, kwargs, ex.args[i])
+            ex.args[i], str_arg, fmt_arg = update_escaped!(args, ex.args[i])
             str_ex *= str_arg
             fmt_ex *= fmt_arg
         else # Operator
@@ -343,63 +339,56 @@ function update_escaped_comparison!(args, kwargs, ex; isoutmost=false)
     return ex, str_ex, fmt_ex, ""
 end
 
-function update_escaped_argsapprox!(args, kwargs, ex; isoutmost=false)
+function update_escaped_argsapprox!(args, ex; isoutmost=false)
 
     # Recursively update terms for both arguments
-    ex.args[1], str_arg1, fmt_arg1, _ = update_terms!(args, kwargs, ex.args[1])
-    ex.args[2], str_arg2, fmt_arg2, _ = update_terms!(args, kwargs, ex.args[2])
+    ex.args[2], str_arg1, fmt_arg1 = update_escaped!(args, ex.args[2])
+    ex.args[3], str_arg2, fmt_arg2 = update_escaped!(args, ex.args[3])
     fmt_kw = ""
 
-    if isoutmost
-        # Paren always needed for logical expressions
-        str_ex = str_arg1 * " " * string(ex.args[1]) * " " * str_arg2
-        fmt_ex = fmt_arg1 * " " * _string_unvec(ex.args[1]) * " " *  fmt_arg2
-
-        i = 3
-        while i <= length(ex.args)
-            # Push escaped keyword value to kwargs
-            push!(kwargs, esc(ex.args[i].args[2]))
-            
-            # Get the format
-            fmt_kw_i = "$(ex.args[i].args[1]) = {$(length(kwargs)):s}, "
-            fmt_kw *= fmt_kw_i
-
-            # The keyword value should now be KW[.]
-            ex.args[i].args[2] = :(KW[$(length(kwargs))])
-
-            i += 1
-        end
+    # Initialize string formatting stuff
+    str_ex = string(ex.args[1]) * "(" * str_arg1 * ", " * str_arg2  * ", "
+    if isoutmost # If outmost, format as comparison, otherwise as function call
+        fmt_ex = fmt_arg1 * " " * string_unvec(ex.args[1]) * " " *  fmt_arg2
     else
-        str_ex = string(ex.args[1]) * "(" * str_arg1 * ", " * str_arg2 * ", "
+        fmt_ex = string_unvec(ex.args[1]) * "(" * fmt_arg1 * ", " * fmt_arg2  * ", "
+    end
+    fmt_kw = ""
 
-        i = 3
-        while i <= length(ex.args)
-            # Push escaped keyword value to kwargs
-            push!(kwargs, esc(ex.args[i].args[2]))
-            
-            # Get the format
-            fmt_kw_i = "$(ex.args[i].args[1]) = {$(length(kwargs)):s}, "
-            if outmost
-                fmt_kw *= fmt_kw_i
-            else
-                fmt_ex *= fmt_kw_i
-            end
+    # Iterate through keyword arguments
+    i = 4
+    while i <= length(ex.args)
+        push!(args, esc(Expr(:call, :Ref, ex.args[i].args[2])))
 
-            # The keyword value should now be KW[.]
-            ex.args[i].args[2] = :(KW[$(length(kwargs))])
+        str_ex *= "$(ex.args[i].args[1]) = $(ex.args[i].args[2]), "
 
-            i += 1
+        fmt_kw_i = "$(ex.args[i].args[1]) = {$(length(args)):s}, "
+
+        if isoutmost 
+            fmt_kw *= fmt_kw_i
+        else
+            fmt_ex *= fmt_kw_i
         end
+            
+        ex.args[i].args[2] = :(ARG[$(length(args))].x)
 
-        # Finalize the string formatting
-        fmt_ex
+        i += 1
     end
 
+    # Finalize string formatting
+    str_ex = chopsuffix(str_ex, ", ") * ")"
+    if isoutmost 
+        if length(fmt_kw) > 0
+            fmt_kw = "with " * chopsuffix(fmt_kw, ", ")
+        end
+    else
+        fmt_ex = chopsuffix(fmt_ex, ", ") * ")"
+    end
 
-    return ex, str_ex, fmt_ex, ""
+    return ex, str_ex, fmt_ex, fmt_kw
 end
 
-function update_escaped_displaycall!(args, kwargs, ex; isoutmost=false)
+function update_escaped_displaycall!(args, ex; isoutmost=false)
 
     # Initialize string formatting stuff
     str_ex = string(ex.args[1]) * (ex.head === :call ? "(" : ".(")
@@ -407,75 +396,52 @@ function update_escaped_displaycall!(args, kwargs, ex; isoutmost=false)
     fmt_kw = ""
     
     if ex.head === :call
-        # Positional arguments. Recall that :parameters have been converted to keywords 
-        # in _preprocess() and will always come after all positional arguments.
+        ex_args = ex.args
         i = 2
-        while !(isa(ex.args[i], Expr) && ex.args[i].head === :kw)
-            ex.args[i], str_arg, fmt_arg = update_terms!(args, kwargs, ex.args[i])
-            str_ex *= str_arg * ", "
-            fmt_ex *= fmt_arg * ", "
-            i += 1
-        end
-
-        while i <= length(ex.args)
-            # Push escaped keyword value to kwargs
-            push!(kwargs, esc(ex.args[i].args[2]))
-            
-            # Get the format
-            fmt_kw_i = "$(ex.args[i].args[1]) = {$(length(kwargs)):s}, "
-            if outmost
-                fmt_kw *= fmt_kw_i
-            else
-                fmt_ex *= fmt_kw_i
-            end
-
-            # The keyword value should now be KW[.]
-            ex.args[i].args[2] = :(KW[$(length(kwargs))])
-
-            i += 1
-        end
-
-    else # ex.head === :.
-
-        # Positional arguments. Assumes no :parameters because converted to :kw in 
+    else
+        ex_args = ex.args[2].args
         i = 1
-        while !(isa(ex.args[2].args[i], Expr) && ex.args[2].args[i].head === :kw)
-            ex.args[2].args[i], str_arg, fmt_arg = update_terms!(args, kwargs, ex.args[2].args[i])
-            str_ex *= str_arg * ", "
-            fmt_ex *= fmt_arg * ", "
-            i += 1
-        end
-
-        # Keyword arguments
-        while i <= length(ex.args[2].args)
-            # Push escaped keyword value to kwargs
-            push!(kwargs, esc(ex.args[2].args[i].args[2]))
-            
-            # Get the format
-            fmt_kw_i = "$(ex.args[2].args[i].args[1]) = {$(length(kwargs)):s}, "
-            if outmost
-                fmt_kw *= fmt_kw_i
-            else
-                fmt_ex *= fmt_kw_i
-            end
-
-            # The keyword value should now be KW[.]
-            ex.args[2].args[i].args[2] = :(KW[$(length(kwargs))])
-
-            i += 1
-        end
-
     end
 
-    # Finalize string formatting stuff
-    str_ex = chop_suffix(str_ex, ", ") * ")"
-    fmt_ex = chop_suffix(fmt_ex, ", ") * ")"
+    # Positional arguments. Recall that :parameters have been converted to keywords 
+    # in _preprocess() and will always come after all positional arguments.
+    while i <= length(ex_args) && !(isa(ex_args[i], Expr) && ex_args[i].head === :kw)
+        ex_args[i], str_arg, fmt_arg = update_escaped!(args, ex_args[i])
+        str_ex *= str_arg * ", "
+        fmt_ex *= fmt_arg * ", "
+        i += 1
+    end
+
+    # Keyword arguments
+    while i <= length(ex_args)
+        push!(args, esc(Expr(:call, :Ref, ex_args[i].args[2])))
+
+        str_ex *= "$(ex_args[i].args[1]) = $(ex_args[i].args[2]), "
+
+        fmt_kw_i = "$(ex_args[i].args[1]) = {$(length(args)):s}, "
+
+        if isoutmost 
+            fmt_kw *= fmt_kw_i
+        else
+            fmt_ex *= fmt_kw_i
+        end
+            
+        ex_args[i].args[2] = :(ARG[$(length(args))].x)
+
+        i += 1
+    end
+
+    # Finalize string formatting
+    str_ex = chopsuffix(str_ex, ", ") * ")"
+    fmt_ex = chopsuffix(fmt_ex, ", ") * ")"
+    if isoutmost && length(fmt_kw) > 0
+        fmt_kw = "with " * chopsuffix(fmt_kw, ", ")
+    end
 
     return ex, str_ex, fmt_ex, fmt_kw
-
 end
 
-function update_escaped_fallback!(args, kwargs, ex; isoutmost::Bool=false)
+function update_escaped_fallback!(args, ex; isoutmost::Bool=false)
     # Add escaped term to terms
     push!(args, esc(ex))
 
