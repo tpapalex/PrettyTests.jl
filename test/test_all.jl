@@ -76,7 +76,7 @@
         ]
 
         @testset "$ex" for ex in cases
-            @test_throws "cannot take keyword arguments" TM.add_keywords!(ex, :(x=1))
+            @test_throws "does not accept keyword arguments" TM.add_keywords!(ex, :(x=1))
         end
 
         # invalid keyword error
@@ -89,7 +89,7 @@
         ]
 
         @testset "$kws" for kws in cases
-            @test_throws "is not a keyword argument" TM.add_keywords!(:(a == b), kws)
+            @test_throws "is not a valid keyword argument" TM.add_keywords!(:(a == b), kws)
         end
      end
 
@@ -345,14 +345,14 @@
                     :(≈(ARG[1], ARG[2], atol=ARG[3].x)), 
                     "≈(a, b, atol = TOL)",
                     "{1:s} ≈ {2:s}",
-                    "with atol = {3:s}",
+                    "atol = {3:s}",
                     [:a, :b, :(Ref(TOL))],
                 ),
                 :(.≉(a, b, rtol=100*1e-8, atol=TOL)) => (
                     :(.≉(ARG[1], ARG[2], rtol=ARG[3].x, atol=ARG[4].x)), 
                     ".≉(a, b, rtol = 100 * 1.0e-8, atol = TOL)",
                     "{1:s} ≉ {2:s}", 
-                    "with rtol = {3:s}, atol = {4:s}", 
+                    "rtol = {3:s}, atol = {4:s}", 
                     [:a, :b, :(Ref(100*1e-8)), :(Ref(TOL))],
                 )
             ]
@@ -427,14 +427,14 @@
                     :(isapprox(ARG[1], ARG[2], atol=ARG[3].x)), 
                     "isapprox(a, b, atol = TOL)",
                     "isapprox({1:s}, {2:s})",
-                    "with atol = {3:s}",
+                    "atol = {3:s}",
                     [:a, :b, :(Ref(TOL))],
                 ),
                 :(isapprox.(a, b, rtol=100*1e-8, atol=TOL)) => (
                     :(isapprox.(ARG[1], ARG[2], rtol=ARG[3].x, atol=ARG[4].x)), 
                     "isapprox.(a, b, rtol = 100 * 1.0e-8, atol = TOL)",
                     "isapprox({1:s}, {2:s})", 
-                    "with rtol = {3:s}, atol = {4:s}", 
+                    "rtol = {3:s}, atol = {4:s}", 
                     [:a, :b, :(Ref(100*1e-8)), :(Ref(TOL))],
                 ),
             ]
@@ -528,6 +528,182 @@
         end
     end
 
+    @testset "_string_idxs()" begin
+        I = CartesianIndex
+        @test TM._string_idxs([1,2,3]) == ["1", "2", "3"]
+        @test TM._string_idxs([1,10,100]) == ["  1", " 10", "100"]
+        @test TM._string_idxs([I(1,1), I(1,10), I(100,1)]) == ["  1, 1", "  1,10", "100, 1"]
+    end
+
+    @testset "_string_failures()" begin
+        
+        msg = (io, idx) -> print(io, 2*idx)
+        idxs = [1,2,3]
+        exp = "\n    idx=[1]: 2\n    idx=[2]: 4\n    idx=[3]: 6"
+        @test sprint(TM.print_failures, idxs, msg) == exp
+
+        msg = (io, idx) -> print(io, sum(idx.I))
+        idxs = CartesianIndex.([(1,1), (1,10), (10,1)])
+        exp = "\n    idx=[ 1, 1]: 2\n    idx=[ 1,10]: 11\n    idx=[10, 1]: 11"
+        @test sprint(TM.print_failures, idxs, msg) == exp
+
+        # Wrap to 
+        printfunc = (args...) -> TM.print_failures(args...; max_vals=4)
+        msg = (io, idx) -> print(io, idx)
+        idxs = 1:20
+        exp = "\n    idx=[ 1]: 1\n    idx=[ 2]: 2\n    ⋮\n    idx=[19]: 19\n    idx=[20]: 20"
+        @test sprint(printfunc, idxs, msg) == exp
+    end
+
+
+    @testset "eval_test_all()" begin
+        destyle = x -> replace(x, r"\e\[\d+m" => "")
+        struct TestStruct
+            x::Symbol
+        end
+
+        @testset "invalid broadcast behaviour" begin
+            f = (args...) -> TM.eval_test_all(args..., "", "", LineNumberNode(1))
+            @test_throws "not same size as broadcasted terms () != (2,)" f(true, [[1,2]])
+            @test_throws "not same size as broadcasted terms (2,) != (3,)" f([true, false], [[1,2,3], [1,2,3]])
+            @test_throws "not same size as broadcasted terms (2,) != (3, 3)" f([true, false], [[1,2,3], [1 2 3]])
+        end
+
+        @testset "evaled is not array or bool" begin
+            f = (evaled) -> TM.eval_test_all(evaled, [evaled], "", "", LineNumberNode(1))
+            # Non-boolean non-array
+            res = f(1)   
+            @test res isa Test.Returned
+            @test res.value isa String
+            @test occursin("1 ===> Int64", destyle(res.value))
+
+            res = f(:a)   
+            @test res isa Test.Returned
+            @test res.value isa String
+            @test occursin("a ===> Symbol", destyle(res.value))
+
+            res = f(TestStruct(:b))
+            @test res isa Test.Returned
+            @test res.value isa String
+            @test occursin("TestStruct(:b) ===> TestStruct", destyle(res.value))
+        end
+
+        @testset "evaled is non-bool array" begin
+            f = (evaled) -> TM.eval_test_all(evaled, [evaled], "", "", LineNumberNode(1))
+
+            res = f([10,2])
+            @test res isa Test.Returned
+            @test res.value isa String
+            @test occursin("Vector{Int64}(2) with 2 non-Boolean values.", res.value)
+            @test occursin("idx=[1]: 10 ===> Int64", destyle(res.value))
+            @test occursin("idx=[2]: 2 ===> Int64", destyle(res.value))
+
+            res = f(Any[true, :a, false, TestStruct(:b)])
+            @test res isa Test.Returned
+            @test res.value isa String
+            @test occursin("Vector{Any}(4) with 2 non-Boolean values.", res.value)
+            @test occursin("idx=[2]: a ===> Symbol", destyle(res.value))
+            @test occursin("idx=[4]: TestStruct(:b) ===> TestStruct", destyle(res.value))
+
+            res = f(Any[false true :a])
+            @test res isa Test.Returned
+            @test res.value isa String
+            @test occursin("Matrix{Any}(1×3) with 1 non-Boolean value.", res.value)
+            @test occursin("idx=[1,3]: a ===> Symbol", destyle(res.value))
+        end
+
+        @testset "evaled is bool" begin
+            f = (evaled) -> TM.eval_test_all(evaled, [evaled], "{1:s}", "", LineNumberNode(1))
+            res = f(true)
+            @test res isa Test.Returned
+            @test res.value === true
+            @test res.data === nothing
+
+            res = f(false)
+            @test res isa Test.Returned
+            @test res.value === false
+            @test res.data isa String
+            @test occursin("Failed 1 test.", res.data)
+            @test occursin("idx=[1]: false", destyle(res.data))
+
+            f = (args...) -> TM.eval_test_all(args..., LineNumberNode(1))
+
+            terms = [1, 1.00001, Ref(1e-3)]
+            evaled = isapprox(terms[1], terms[2], atol=terms[3].x)
+            fmt_ex = "isapprox({1:s}, {2:s})"
+            fmt_kw = "atol = {3:s}"
+
+            res = f(evaled, terms, fmt_ex, fmt_kw)
+            @test res isa Test.Returned
+            @test res.value === true
+            @test res.data === nothing
+            
+            terms = [1, 1.00001, Ref(1e-8)]
+            evaled = isapprox(terms[1], terms[2], atol=terms[3].x)
+            fmt_ex = "isapprox({1:s}, {2:s})"
+            fmt_kw = "atol = {3:s}"
+
+            res = f(evaled, terms, fmt_ex, fmt_kw)
+            @test res isa Test.Returned
+            @test res.value === false
+            @test res.data isa String
+            @test occursin("Failed 1 test.", destyle(res.data))
+            @test occursin("Keywords: atol = 1.0e-8", destyle(res.data))
+            @test occursin("idx=[1]: isapprox(1, 1.00001)", destyle(res.data))
+        end
+
+        @testset "evaled is bool array" begin
+            f = (args...) -> TM.eval_test_all(args..., LineNumberNode(1))
+
+            terms = [[1, 2, 3], [1, 2, 3.001]]
+
+            res = f(terms[1] .<= terms[2], terms, "{1:s} <= {2:s}", "")
+            @test res isa Test.Returned
+            @test res.value === true
+            @test res.data === nothing
+
+            res = f(terms[1] .< terms[2], terms, "{1:s} < {2:s}", "")
+            @test res isa Test.Returned
+            @test res.value === false
+            @test res.data isa String
+            @test occursin("Failed 2 tests from length 3 result.", res.data)
+            @test occursin("idx=[1]: 1.0 < 1.0", destyle(res.data))
+            @test occursin("idx=[2]: 2.0 < 2.0", destyle(res.data))
+
+            terms = [[1, 2, 3], [1, 2, 3.001], Ref(1e-8)]
+            evaled = isapprox.(terms[1], terms[2], atol=terms[3].x)
+            fmt_ex = "isapprox({1:s}, {2:s})"
+            fmt_kw = "atol = {3:s}"
+            res = f(evaled, terms, fmt_ex, fmt_kw)
+            @test res isa Test.Returned
+            @test res.value === false
+            @test res.data isa String
+            @test occursin("Failed 1 test from length 3 result.", res.data)
+            @test occursin("Keywords: atol = 1.0e-8", destyle(res.data))
+            @test occursin("idx=[3]: isapprox(3, 3.001)", destyle(res.data))
+
+            terms = [[1, 2], [1 2.01], Ref(1e-3)]
+            evaled = .≈(terms[1], terms[2], atol=terms[3].x)
+            res = f(evaled, terms, "{1:s} ≈ {2:s}", "atol = {3:s}")
+            @test res isa Test.Returned
+            @test res.value === false
+            @test res.data isa String
+            @test occursin("Failed 3 tests from size 2×2 result.", res.data)
+            @test occursin("Keywords: atol = 0.001", destyle(res.data))
+            @test occursin("idx=[1,2]: 1 ≈ 2.01", destyle(res.data))
+            @test occursin("idx=[2,1]: 2 ≈ 1", destyle(res.data))
+            @test occursin("idx=[2,2]: 2 ≈ 2.01", destyle(res.data))
+
+            terms = [[true, false], [true, true]]
+            evaled = terms[1] .&& terms[2]
+            res = f(evaled, terms, "{1:s} && {2:s}", "")
+            @test res isa Test.Returned
+            @test res.value === false
+            @test res.data isa String
+            @test occursin("Failed 1 test from length 2 result.", res.data)
+            @test occursin("idx=[2]: false && true", destyle(res.data))
+        end
+    end
     # @testset "update_terms_simple" begin
 
     #     cases = [

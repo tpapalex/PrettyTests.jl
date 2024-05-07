@@ -1,5 +1,5 @@
 module TestMacroExtensions
-    using Test
+    using Test, Format
     import Test: Result, Pass, Fail, Broken, Error
     import Test: ExecutionResult, Returned, Threw
     import Test: get_testset, record
