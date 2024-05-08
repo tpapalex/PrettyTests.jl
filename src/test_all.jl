@@ -291,6 +291,8 @@ function update_escaped_negation!(args, ex; isoutmost=false)
     str_ex = string(ex.args[1]) * str_arg
     fmt_ex = string_unvec(ex.args[1]) * fmt_arg
 
+    ex.args[1] = esc(ex.args[1])
+
     return ex, str_ex, fmt_ex, ""
 end
 
@@ -322,6 +324,7 @@ function update_escaped_comparison!(args, ex; isoutmost=false)
         else # Operator
             str_ex *= " " * string(ex.args[i]) * " "
             fmt_ex *= " " * string_unvec(ex.args[i]) * " "
+            ex.args[i] = esc(ex.args[i])
         end
     end
     
@@ -365,6 +368,8 @@ function update_escaped_argsapprox!(args, ex; isoutmost=false)
         fmt_ex = string_unvec(ex.args[1]) * "(" * fmt_arg1 * ", " * fmt_arg2 * ", " * chopsuffix(fmt_kw, ", ") * ")"
         fmt_kw = ""
     end
+
+    ex.args[1] = esc(ex.args[1])
 
     return ex, str_ex, fmt_ex, fmt_kw
 end
@@ -419,6 +424,8 @@ function update_escaped_displaycall!(args, ex; isoutmost=false)
             chopsuffix(fmt_kw, ", ") * ")"
         fmt_kw = ""
     end
+
+    ex.args[1] = esc(ex.args[1])
     return ex, str_ex, fmt_ex, fmt_kw
 end
 
@@ -488,30 +495,10 @@ function print_failures(io, idxs, print_idx_message; prefix="              ", ma
     return nothing
 end
 
-function eval_test_all(
-        @nospecialize(evaled),
-        @nospecialize(terms),
-        fmt_ex, 
-        fmt_kw, 
-        source::LineNumberNode=LineNumberNode(1))
-
-    # If the result is not an array or Boolean,...
-    if !(typeof(evaled) <: AbstractArray) && !(typeof(evaled) <: Bool)
-        return Returned(all(evaled), nothing, source)
-    end
-
-    # Broadcast the terms and check that the size matches the evaled expression, 
-    # otherwise throw an internal error.
-    broadcasted_terms = Base.broadcasted(tuple, terms...)
-    if size(broadcasted_terms) != size(evaled)
-        return Returned(all(evaled), nothing, source)
-    end
-
-    # If result is a non-Boolean array, create a nicer message showing the non-boolean 
-    # elements
-    if !(eltype(evaled) <: Bool)
+struct TypeErrorOnAllCall <: Exception
+    msg::String
+    function TypeErrorOnAllCall(evaled::AbstractArray) 
         io = IOBuffer()
-
         # Print type of result first
         print(io, typeof(evaled))
         if typeof(evaled) <: AbstractVector
@@ -519,29 +506,109 @@ function eval_test_all(
         elseif typeof(evaled) <: AbstractArray
             print(io, "(", join(size(evaled), "×"), ")")
         end
-
-        # Then find non-boolean values and pretty-print them
+    
         idxs = findall(x -> !isa(x, Bool), evaled)
-        print(io, " with ", length(idxs), " non-Boolean value", length(idxs) == 1 ? "." : "s.")
-
+        print(io, " with ", length(idxs), " non-Boolean value", length(idxs) == 1 ? ":" : "s:")
+    
         print_idx_message = (io, idx) -> begin
             print(io, repr(evaled[idx]))
-            printstyled(IOContext(io, :color => true), " ===> ", typeof(evaled[idx]))
+            printstyled(IOContext(io, :color => true), " ===> ", typeof(evaled[idx]), color=:light_yellow)
         end
-        print_failures(io, idxs, print_idx_message)
+        print_failures(io, idxs, print_idx_message, prefix="    ")
+    
+        return new(String(take!(io)))
+    end
+    function TypeErrorOnAllCall(evaled)
+        io = IOBuffer()
+        print(io, sprint(show, evaled, context = :limit => true))
+        printstyled(IOContext(io, :color => true), " ===> ", typeof(evaled), color=:light_yellow)
+        return new(String(take!(io)))
+    end
+end
 
-        return Returned(false, String(take!(io)), source)
+function Base.showerror(io::IO, err::TypeErrorOnAllCall)
+    print(io, "TypeError: non-boolean used in boolean context")
+    if err.msg != ""
+        print(io, "\n  Argument isa ", err.msg)
+    end
+end
+
+struct MissingOnAllCall
+    msg::String
+    function MissingOnAllCall(evaled::AbstractArray) 
+        io = IOBuffer()
+        # Print type of result first
+        print(io, typeof(evaled))
+        if typeof(evaled) <: AbstractVector
+            print(io, "(", length(evaled), ")")
+        elseif typeof(evaled) <: AbstractArray
+            print(io, "(", join(size(evaled), "×"), ")")
+        end
+    
+        n_miss = sum(x -> ismissing(x), evaled)
+        n_false = sum(x -> !x, skipmissing(evaled), init=0)
+        print(io, " with ", n_false, " false and ", n_miss, " missing value", n_miss + n_false == 1 ? ":" : "s:")
+    
+        idxs = findall(x -> !isequal(x, true), evaled)
+        print_idx_message = (io, idx) -> begin
+            printstyled(IOContext(io, :color => true), " ===> ", evaled[idx], color=:light_yellow)
+        end
+        print_failures(io, idxs, print_idx_message, prefix="    ")
+    
+        return new(String(take!(io)))
+    end
+    function MissingOnAllCall(evaled)
+        return new(string(typeof(evaled)))
+    end
+end
+
+function Base.showerror(io::IO, err::MissingOnAllCall)
+    print(io, "MissingException: all() expression returned missing")
+    if err.msg != ""
+        print(io, "\n  Argument isa ", err.msg)
+    end 
+end
+
+function eval_test_all(
+        @nospecialize(evaled),
+        @nospecialize(terms),
+        fmt_ex, 
+        fmt_kw, 
+        source::LineNumberNode=LineNumberNode(1))
+
+    # If not an iterable of bool/missing values values, fall-back to normal all()
+    if !(eltype(evaled) <: Union{Bool, Missing})
+        res = try 
+            all(evaled)
+        catch _e
+            if isa(_e, TypeError) && _e.expected === Bool
+                throw(TypeErrorOnAllCall(evaled))
+            else
+                rethrow(_e)
+            end
+        end
+        if ismissing(res)
+            throw(MissingOnAllCall(evaled))
+        end
+        return Returned(res, nothing, source)
+    end
+    
+    res = all(evaled)
+    if ismissing(res)
+        throw(MissingOnAllCall(evaled))
     end
 
-    # From here we can assume that result is a boolean array
-    # If all true, return a result result with true
-    if all(evaled)
+    if res
         return Returned(true, nothing, source)
     end
 
+    # Broadcast the terms and check that the size matches the evaled expression, 
+    # otherwise throw an internal error.
+    broadcasted_terms = Base.broadcasted(tuple, terms...)
+
     # Otherwise, find all the failing indices and print a message
     io = IOBuffer()
-    idxs = findall(x -> !x, evaled)
+    idxs = findall(x -> !isequal(x, true), evaled)
 
     # First print message
     print(io, "Failed ", length(idxs), " test", length(idxs) == 1 ? "" : "s")
@@ -565,6 +632,9 @@ function eval_test_all(
 
     print_idx_message = (io, idx) -> begin
         printfmt(io, fmt_ex, repr.(broadcasted_terms[idx])...)
+        if ismissing(evaled[idx])
+            printstyled(IOContext(io, :color => true), " ===> missing", color=:light_yellow)
+        end
     end
     print_failures(io, idxs, print_idx_message)
 
@@ -579,7 +649,7 @@ function get_test_all_result(ex, source)
         try
             let ARG = [$(escaped_args...)]
                 eval_test_all(
-                    eval($(mod_ex)), 
+                    $(mod_ex), 
                     ARG, 
                     $(fmt_ex), 
                     $(fmt_kw), 
