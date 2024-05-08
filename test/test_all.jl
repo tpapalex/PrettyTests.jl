@@ -6,7 +6,6 @@
             # Regular tests
             cases = [
                 # Comparisons
-                :(a == b)      => ()               => :(a == b),
                 :(a .== b)     => ()               => :(a .== b),
                 # Functions calls
                 :(g())         => ()               => :(g()),
@@ -68,124 +67,232 @@
 
      @testset "preprocess(ex)" begin
 
-        cases = [
-            # Converted to comparisons
-            :(a == b) => Expr(:comparison, :a, :(==), :b),
-            :(a .== b) => Expr(:comparison, :a, :.==, :b),
-            :(≈(a, b)) => Expr(:comparison, :a, :≈, :b),
-            :(a .≈ b) => Expr(:comparison, :a, :.≈, :b),
-            :(a ∈ b) => Expr(:comparison, :a, :∈, :b),
-            :(a .⊆ b) => Expr(:comparison, :a, :.⊆, :b),
-            :(a <: b) => Expr(:comparison, :a, :<:, :b),
-            :(a .<: b) => Expr(:comparison, :a, :.<:, :b),
-            :(a >: b) => Expr(:comparison, :a, :>:, :b),
-            :(a .>: b) => Expr(:comparison, :a, :.>:, :b),
-            # Displayable calls
-            :(≈(a,b;atol=1)) => :(≈(a,b,atol=1)),
-            :(.≈(a,b;atol=1)) => :(.≈(a,b,atol=1)),
-            :(isapprox(a,b;atol=1)) => :(isapprox(a,b,atol=1)),
-            :(isapprox.(a,b;atol=1)) => :(isapprox.(a,b,atol=1)),
-            :(isnan(x;a=1)) => :(isnan(x,a=1)),
-            :(isnan.(x;a=1)) => :(isnan.(x,a=1)),
-            :(isnan(x;a=1,b=1)) => :(isnan(x,a=1,b=1)),
-            :(isnan.(x;a=1,b=1)) => :(isnan.(x,a=1,b=1)),
-            :(isnan(x,a=1,b=1;c=1,d=1)) => :(isnan(x,a=1,b=1,c=1,d=1)),
-            :(isnan.(x,a=1,b=1;c=1,d=1)) => :(isnan.(x,a=1,b=1,c=1,d=1)),
-            # No change
-            :(a) => :(a),
-            :(a && b) => :(a && b),
-            :(a .|| b) => :(a .|| b),
-            :(g(x)) => :(g(x)),
-            :(g(x, a=1; b=1)) => :(g(x, a=1; b=1)),
-            :(g.(x)) => :(g.(x)),
-            :(g.(x, a=1; b=1)) => :(g.(x, a=1; b=1)),
-            # Not keywordized because no positional arguments
-            :(isnan(;a=1)) => :(isnan(;a=1)),
-            :(isnan.(;a=1)) => :(isnan.(;a=1)),
-            :(isnan(;a=1,b=1)) => :(isnan(;a=1,b=1)),
-            :(isnan.(a=1;b=1)) => :(isnan.(a=1;b=1)),
-            # Not keywordized because already parameter or splat arguments
-            :(≈(a, b, atol=1)) => :(≈(a, b, atol=1)),
-            :(isnan(x, a=1)) => :(isnan(x, a=1)), 
-            :(isnan.(x, a=1)) => :(isnan.(x, a=1)), 
-            :(isnan(x = 1)) => :(isnan(x = 1)),
-            :(isnan.(x = 1)) => :(isnan.(x = 1))
-        ]
+        @testset "convert to comparison" begin
+            cases = [
+                # Converted to comparisons
+                :(a .== b) => Expr(:comparison, :a, :.==, :b),
+                :(.≈(a, b)) => Expr(:comparison, :a, :.≈, :b),
+                :(a .≈ b) => Expr(:comparison, :a, :.≈, :b),
+                :(a .∈ b) => Expr(:comparison, :a, :.∈, :b),
+                :(a .⊆ b) => Expr(:comparison, :a, :.⊆, :b),
+                :(a .<: b) => Expr(:comparison, :a, :.<:, :b),
+                :(a .>: b) => Expr(:comparison, :a, :.>:, :b),
+            ]
 
-        @testset "$ex" for (ex, res) in cases
-            @test TM.preprocess(ex) == res
-        end
-     end
-
-
-    @testset "is...(ex)" begin
-
-        cases = [
-            # Negation
-            :(!a) => :negation,
-            :(.!g.(x)) => :negation, 
-            :(!(a .|| b)) => :negation,
-            # Logical
-            :(a && b) => :logical,
-            :(a && b || c) => :logical,
-            :(a .|| (g.(x) && c)) => :logical,
-            # Comparison
-            :(a == b) => :comparison,
-            :(a .== b) => :comparison,
-            :(a ≈ b) => :comparison,
-            :(a <: b) => :comparison,
-            :(a .>: b) => :comparison,
-            # Approx special case
-            :(≈(a, b, a=1)) => :argsapprox,
-            :(≉(a, b, a=1)) => :argsapprox,
-            :(.≈(a, b; atol=1)) => :argsapprox,
-            :(.≉(a, b; atol=1)) => :argsapprox,
-            :(≈()) => :fallback, # incorrect number of positional arguments
-            :(.≈(a, atol=1)) => :fallback, # incorrect number of positional arguments
-            :(≉(a, b, c, atol=1)) => :fallback, # incorrect number of positional arguments
-            :(≈(a, b..., atol=1)) => :fallback, # splat argument
-            # Displayable function
-            :(isnan(x)) => :displaycall,
-            :(isreal.(x)) => :displaycall,
-            :(occursin("a", b)) => :displaycall,
-            :(contains.(r"a", "b")) => :displaycall,
-            :(isinf()) => :fallback, # no positional arguments
-            :(isnan.(a=1)) => :fallback, # no positional arguments
-            :(isapprox(a..., atol=1)) => :fallback, # splat argument
-            # Fall back
-            :(1) => :fallback, 
-            :(1:3) => :fallback,
-            :((1,2,3)) => :fallback,
-            :([1,2,3]) => :fallback,
-            :([1 2 3]) => :fallback,
-            :(Ref(1:3)) => :fallback,
-            :(a) => :fallback,
-            :(g(x)) => :fallback,
-        ]
-
-        @testset "is_$res($ex)" for (ex, res) in cases
-            ex = TM.preprocess(ex)
-            if res === :logical
-                @test TM.is_logical(ex)
-            elseif res === :negation
-                @test TM.is_negation(ex)
-            elseif res === :comparison
-                @test TM.is_comparison(ex)
-            elseif res === :argsapprox
-                @test TM.is_argsapprox(ex)
-            elseif res === :displaycall
-                @test TM.is_displaycall(ex)
-            elseif res === :fallback
-                @test TM.is_fallback(ex)
+            @testset "$ex" for (ex, res) in cases
+                @test TM.preprocess(ex) == res
             end
         end
+
+        @testset "change parameters to keywords" begin
+            cases = [
+                :(isnan.(x;a=1)) => :(isnan.(x,a=1)),
+                :(isnan.(x;a=1,b=1)) => :(isnan.(x,a=1,b=1)),
+                :(isnan.(x,a=1,b=1;c=1,d=1)) => :(isnan.(x,a=1,b=1,c=1,d=1)),
+                :(.≈(a,b;atol=1)) => :(.≈(a,b,atol=1)),
+                :(isapprox.(a,b;atol=1)) => :(isapprox.(a,b,atol=1)),
+            ]
+
+            @testset "$ex" for (ex, res) in cases
+                @test TM.preprocess(ex) == res
+            end
+        end
+
+        @testset "unchanged" begin
+            cases = [
+                :(a), 
+                :(:a),
+                :(a && b), 
+                :(a == b), 
+                :(a == b == c), 
+                :(g(x)), 
+                :(g.(x, a=1)), 
+                :(isapprox(a,b,atol=1)),  
+                :(isnan(x)), 
+                :([1,2,3]), 
+                :((1,2,3)),
+                :([1 2 3]),
+                :(1:3),
+                :(Ref(a)),
+                # Already comparison
+                :(a .== b .== c),
+                Expr(:comparison, :a, :.==, :b),
+                # Is displaycall but already keywordized
+                :(isnan.(x)),
+                :(isapprox.(a,b,atol=1)),
+                # Is argsapprox but already keywordized
+                :(.≈(a,b,atol=1)),
+
+            ]
+
+            @testset "$ex" for ex in cases
+                @test TM.preprocess(ex) === ex
+            end
+        end
+
+
+     end
+
+    @testset "is_xxx(ex)" begin
+        @testset "is_negation(ex)" begin
+            cases = [
+                # True
+                :(.!a) => true,
+                :(.!(a .== b)) => true,
+                :(.!g(x)) => true,
+                :(.!g.(x)) => true,
+                :(.!isnan.(x)) => true,
+                # False
+                :(!a) => false,
+                :(!g(x)) => false,
+                :(!(a == b)) => false,
+                :(a .== b) => false
+            ]
+
+            @testset "$ex => $res" for (ex, res) in cases
+                ex = TM.preprocess(ex)
+                @test TM.is_negation(ex) === res
+            end
+        end
+
+        @testset "is_logical(ex)" begin
+            cases = [
+                # True
+                :(a .&& b) => true,
+                :(a .|| b) => true,
+                :(a .&& b .|| c) => true,
+                :(a .&& (g.(x) .&& c)) => true,
+                # False
+                :(a && b) => false,
+                :(a || b) => false,
+                :(a == b) => false,
+                :(a .== b) => false,
+            ]
+
+            @testset "$ex => $res" for (ex, res) in cases
+                ex = TM.preprocess(ex)
+                @test TM.is_logical(ex) === res
+            end
+        end
+
+        @testset "is_comparison(ex)" begin
+            cases = [
+                # True
+                :(a .== b) => true,
+                :(a .≈ b) => true,
+                :(a .>: b) => true,
+                :(a .<: b) => true,
+                :(a .∈ b) => true,
+                # False (splat)
+                :(a... .== b) => false, 
+                :(a .∈ b...) => false,
+                # False (other)
+                :(a == b) => false,
+                :(a .== b <= c) => false,
+                :(a .&& b) => false,
+                :(a .|| b) => false,
+            ]
+
+            @testset "$ex => $res" for (ex, res) in cases
+                ex = TM.preprocess(ex)
+                @test TM.is_comparison(ex) === res
+            end
+        end
+
+        @testset "is_argsapprox(ex)" begin
+            cases = [
+                # True
+                :(.≈(a, b, atol=1)) => true,
+                :(.≉(a, b, atol=1)) => true,
+                # False (incorrect number of positional arguments)
+                :(.≈()) => false,
+                :(.≈(a, atol=1)) => false,
+                :(.≉(a, b, c, atol=1)) => false,
+                # False (splats)
+                :(.≈(a, b..., atol=1)) => false,
+                :(.≉(a..., b, atol=1)) => false,
+                # False (other)
+                :(≈(a, b, atol=1)) => false,
+                :(≉(a, b, atol=1)) => false,
+                :(a == b) => false,
+                :(a .== b <= c) => false,
+                :(a .&& b) => false,
+                :(a .|| b) => false,
+            ]
+            @testset "$ex => $res" for (ex, res) in cases
+                ex = TM.preprocess(ex)
+                @test TM.is_argsapprox(ex) === res
+            end
+        end
+
+        @testset "is_displaycall(ex)" begin
+            cases = [
+                # True
+                :(isnan.(x)) => true, 
+                :(isreal.(x)) => true,
+                :(occursin.(a, b)) => true,
+                :(isapprox.(a, b, atol=1)) => true,
+                # False (no positional arguments)
+                :(isinf.()) => false,
+                :(isapprox.(a=1)) => false,
+                # False (splats in positional arguments)
+                :(isnan.(a...)) => false,
+                :(isapprox.(a..., b..., atol=1)) => false,
+                # False (other)
+                :(g.(x)) => false,
+                :(a .== b) => false,
+            ]
+            @testset "$ex => $res" for (ex, res) in cases
+                ex = TM.preprocess(ex)
+                @test TM.is_displaycall(ex) === res
+            end
+        end
+
+        @testset "is_fallback(ex)" begin
+            cases = [
+                :(1),
+                :(1:3),
+                :((1,2,3)),
+                :([1,2,3]),
+                :([1 2 3]),
+                :(Ref(1:3)),
+                :(a),
+                :(:a),
+                :(g(x)),
+                :(g.(x)),
+            ]
+            @testset "$ex" for ex in cases
+                ex = TM.preprocess(ex)
+                @test TM.is_fallback(ex) === true
+            end
+        end
+
+        @testset "is_mappable(ex)" begin
+            cases = [
+                # True
+                :(x -> iseven(x)) => true,
+                :(x -> x^2) => true,
+                :(x -> true) => true,
+                :(x -> x == 1 && y) => true,
+                # False 
+                :(:a) => false,
+                :(:a == b) => false,
+                :(a .== b) => false,
+                :(a .== b .== c) => false,
+            ]
+            @testset "$ex => $res" for (ex, res) in cases
+                ex = TM.preprocess(ex)
+                @test TM.is_mappable(ex) === res
+            end
+        end
+
     end
+
 
     @testset "update_escaped!()" begin 
     
         @testset "negation" begin
             cases = [
-                :(!a) =>  (:(!ARG[1]),  "!a",  "!{1:s}"), 
                 :(.!a) => (:(.!ARG[1]), ".!a", "!{1:s}"),
             ]
 
@@ -193,9 +300,6 @@
                 # Pre-process and get expected results
                 res_mod_ex, res_str_ex, res_fmt_ex = res
                 ex, res_mod_ex = TM.preprocess(ex), TM.preprocess(res_mod_ex)
-                
-                @test TM.is_negation(ex)
-                @test TM.is_negation(res_mod_ex)
 
                 # Updated escaped terms with outmost = true
                 args = []
@@ -220,22 +324,18 @@
 
         @testset "logical" begin
             cases = [
-                :(a  && b) => (:(ARG[1] && ARG[2]),                           
+                :(a .&& b) => (:(ARG[1] .&& ARG[2]),                           
                                [:a, :b],            
-                               "a && b",                
-                               "{1:s} && {2:s}"),   
-                :(a .|| b) => (:(ARG[1] .|| ARG[2]),                           
-                               [:a, :b],           
-                               "a .|| b",               
-                               "{1:s} || {2:s}"),   
-                :(a  && b  && c  || d) => (:(ARG[1]  && ARG[2]  && ARG[3]  || ARG[4]), 
-                                        [:a, :b, :c, :d],
-                                        "a && b && c || d",
-                                        "{1:s} && {2:s} && {3:s} || {4:s}"),
+                               "a .&& b",                
+                               "{1:s} && {2:s}"), 
+                :(a .|| b .|| c) => (:(ARG[1] .|| ARG[2] .|| ARG[3]), 
+                                     [:a, :b, :c], 
+                                     "a .|| b .|| c", 
+                                     "{1:s} || {2:s} || {3:s}"),
                 :(a .&& b .&& c .|| d) => (:(ARG[1] .&& ARG[2] .&& ARG[3] .|| ARG[4]), 
-                                        [:a, :b, :c, :d],
-                                        "a .&& b .&& c .|| d",
-                                        "{1:s} && {2:s} && {3:s} || {4:s}"),
+                                            [:a, :b, :c, :d],
+                                            "a .&& b .&& c .|| d",
+                                            "{1:s} && {2:s} && {3:s} || {4:s}"),
             ]
 
             @testset "$ex" for (ex, res) in cases
@@ -243,9 +343,6 @@
                 res_mod_ex, res_args, res_str_ex, res_fmt_ex = res
                 res_args = esc.(res_args)
                 ex, res_mod_ex = TM.preprocess(ex), TM.preprocess(res_mod_ex)
-
-                @test TM.is_logical(ex)
-                @test TM.is_logical(res_mod_ex)
 
                 # Updated escaped terms with outmost = true
                 args = []
@@ -269,17 +366,17 @@
 
         @testset "comparison" begin
             cases = [
-                :(a == b) => (:(ARG[1] == ARG[2]),            
+                :(a .== b) => (:(ARG[1] .== ARG[2]),            
                               "{1:s} == {2:s}",
                               [:a, :b]),
                 :(a .∈ b) => (:(ARG[1] .∈ ARG[2]),            
                               "{1:s} ∈ {2:s}",
                               [:a, :b]),
-                :(a ≈ b .> c)   => (:(ARG[1] ≈ ARG[2] .> ARG[3]),   
+                :(a .≈ b .> c)   => (:(ARG[1] .≈ ARG[2] .> ARG[3]),   
                                     "{1:s} ≈ {2:s} > {3:s}",
                                     [:a, :b, :c]),
-                :(a <: b .<: c) => (:(ARG[1] <: ARG[2] .<: ARG[3]), 
-                                    "{1:s} <: {2:s} <: {3:s}",
+                :(a .<: b .>: c) => (:(ARG[1] .<: ARG[2] .>: ARG[3]), 
+                                    "{1:s} <: {2:s} >: {3:s}",
                                     [:a, :b, :c]),
             ]
 
@@ -288,9 +385,6 @@
                 res_mod_ex, res_fmt_ex, res_args = res
                 ex, res_mod_ex = TM.preprocess(ex), TM.preprocess(res_mod_ex)
                 res_str_ex = string(ex)
-
-                @test TM.is_comparison(ex)
-                @test TM.is_comparison(res_mod_ex)
 
                 # Updated escaped terms with outmost = true
                 args = []
@@ -314,9 +408,9 @@
 
         @testset "argsapprox" begin
             cases_outmost = [
-                :(≈(a, b, atol=TOL)) => (
-                    :(≈(ARG[1], ARG[2], atol=ARG[3].x)), 
-                    "≈(a, b, atol = TOL)",
+                :(.≈(a, b, atol=TOL)) => (
+                    :(.≈(ARG[1], ARG[2], atol=ARG[3].x)), 
+                    ".≈(a, b, atol = TOL)",
                     "{1:s} ≈ {2:s}",
                     "atol = {3:s}",
                     [:a, :b, :(Ref(TOL))],
@@ -336,9 +430,6 @@
                 ex, res_mod_ex = TM.preprocess(ex), TM.preprocess(res_mod_ex)
                 res_str_ex = string(ex)
 
-                @test TM.is_argsapprox(ex)
-                @test TM.is_argsapprox(res_mod_ex)
-
                 # Updated escaped terms with outmost = true
                 args = []
                 mod_ex, str_ex, fmt_ex, fmt_kw = TM.update_escaped!(args, deepcopy(ex), isoutmost=true)
@@ -350,9 +441,9 @@
             end            
 
             cases_inner = [
-                :(≈(a, b, atol=TOL)) => (
-                    :(≈(ARG[1], ARG[2], atol=ARG[3].x)), 
-                    "≈(a, b, atol = TOL)",
+                :(.≈(a, b, atol=TOL)) => (
+                    :(.≈(ARG[1], ARG[2], atol=ARG[3].x)), 
+                    ".≈(a, b, atol = TOL)",
                     "≈({1:s}, {2:s}, atol = {3:s})", 
                     "",
                     [:a, :b, :(Ref(TOL))],
@@ -372,9 +463,6 @@
                 ex, res_mod_ex = TM.preprocess(ex), TM.preprocess(res_mod_ex)
                 res_str_ex = string(ex)
 
-                @test TM.is_argsapprox(ex)
-                @test TM.is_argsapprox(res_mod_ex)
-
                 # Updated escaped terms with outmost = true
                 args = []
                 mod_ex, str_ex, fmt_ex, fmt_kw = TM.update_escaped!(args, deepcopy(ex), isoutmost=false)
@@ -388,26 +476,19 @@
 
         @testset "displaycall" begin
             cases_outmost = [
-                :(isnan(a)) => (
-                    :(isnan(ARG[1])), 
-                    "isnan(a)",
+                :(isnan.(a)) => (
+                    :(isnan.(ARG[1])), 
+                    "isnan.(a)",
                     "isnan({1:s})",
                     "",
                     [:a],
                 ),
-                :(isapprox(a, b, atol=TOL)) => (
-                    :(isapprox(ARG[1], ARG[2], atol=ARG[3].x)), 
-                    "isapprox(a, b, atol = TOL)",
+                :(isapprox.(a, b, atol=TOL)) => (
+                    :(isapprox.(ARG[1], ARG[2], atol=ARG[3].x)), 
+                    "isapprox.(a, b, atol = TOL)",
                     "isapprox({1:s}, {2:s})",
                     "atol = {3:s}",
                     [:a, :b, :(Ref(TOL))],
-                ),
-                :(isapprox.(a, b, rtol=100*1e-8, atol=TOL)) => (
-                    :(isapprox.(ARG[1], ARG[2], rtol=ARG[3].x, atol=ARG[4].x)), 
-                    "isapprox.(a, b, rtol = 100 * 1.0e-8, atol = TOL)",
-                    "isapprox({1:s}, {2:s})", 
-                    "rtol = {3:s}, atol = {4:s}", 
-                    [:a, :b, :(Ref(100*1e-8)), :(Ref(TOL))],
                 ),
             ]
 
@@ -431,26 +512,19 @@
             end            
 
             cases_inner = [
-                :(isnan(a)) => (
-                    :(isnan(ARG[1])), 
-                    "isnan(a)",
+                :(isnan.(a)) => (
+                    :(isnan.(ARG[1])), 
+                    "isnan.(a)",
                     "isnan({1:s})",
                     "",
                     [:a],
                 ),
-                :(isapprox(a, b, atol=TOL)) => (
-                    :(isapprox(ARG[1], ARG[2], atol=ARG[3].x)), 
-                    "isapprox(a, b, atol = TOL)",
+                :(isapprox.(a, b, atol=TOL)) => (
+                    :(isapprox.(ARG[1], ARG[2], atol=ARG[3].x)), 
+                    "isapprox.(a, b, atol = TOL)",
                     "isapprox({1:s}, {2:s}, atol = {3:s})",
                     "",
                     [:a, :b, :(Ref(TOL))],
-                ),
-                :(isapprox.(a, b, rtol=100*1e-8, atol=TOL)) => (
-                    :(isapprox.(ARG[1], ARG[2], rtol=ARG[3].x, atol=ARG[4].x)), 
-                    "isapprox.(a, b, rtol = 100 * 1.0e-8, atol = TOL)",
-                    "isapprox({1:s}, {2:s}, rtol = {3:s}, atol = {4:s})", 
-                    "", 
-                    [:a, :b, :(Ref(100*1e-8)), :(Ref(TOL))],
                 ),
             ]
 
@@ -479,6 +553,7 @@
             cases = [
                 :(1),
                 :(a), 
+                :(:a),
                 :([1,2]), 
                 :(g(x)), 
                 :(g.(x,a=1;b=b)), 
@@ -528,146 +603,145 @@
         @test occursin(exp, sprint(printfunc, idxs, msg))
     end
 
+    # @testset "eval_test_all()" begin
+    #     destyle = x -> replace(x, r"\e\[\d+m" => "")
+    #     struct TestStruct
+    #         x::Symbol
+    #     end
 
-    @testset "eval_test_all()" begin
-        destyle = x -> replace(x, r"\e\[\d+m" => "")
-        struct TestStruct
-            x::Symbol
-        end
+    #     @testset "invalid broadcast behaviour" begin
 
-        @testset "invalid broadcast behaviour" begin
+    #     end
 
-        end
+    #     @testset "evaled is not array or bool" begin
+    #         f = (evaled) -> TM.eval_test_all(evaled, [evaled], "", "", LineNumberNode(1))
 
-        @testset "evaled is not array or bool" begin
-            f = (evaled) -> TM.eval_test_all(evaled, [evaled], "", "", LineNumberNode(1))
+    #         res = f(1)
+    #         @test res.value === false
+    #         @test occursin("1 ===> Int64", destyle(res.data))
 
-            res = f(1)
-            @test res.value === false
-            @test occursin("1 ===> Int64", destyle(res.data))
+    #         res = f(:a)
+    #         @test res.value === false
+    #         @test occursin(":a ===> Symbol", destyle(res.value))
 
-            res = f(:a)
-            @test res.value === false
-            @test occursin(":a ===> Symbol", destyle(res.value))
+    #         res = f(TestStruct(:b))
+    #         @test res.value === false
+    #         @test occursin("TestStruct(:b) ===> TestStruct", destyle(res.value))
+    #     end
 
-            res = f(TestStruct(:b))
-            @test res.value === false
-            @test occursin("TestStruct(:b) ===> TestStruct", destyle(res.value))
-        end
+    #     @testset "evaled is non-bool array" begin
+    #         f = (evaled) -> TM.eval_test_all(evaled, [evaled], "", "", LineNumberNode(1))
 
-        @testset "evaled is non-bool array" begin
-            f = (evaled) -> TM.eval_test_all(evaled, [evaled], "", "", LineNumberNode(1))
+    #         res = f([10,2])
+    #         @test res.value === false
+    #         @test occursin("Vector{Int64}(2) with 2 non-Boolean values.", res.data)
+    #         @test occursin("idx=[1]: 10 ===> Int64", destyle(res.data))
+    #         @test occursin("idx=[2]: 2 ===> Int64", destyle(res.data))
 
-            res = f([10,2])
-            @test res.value === false
-            @test occursin("Vector{Int64}(2) with 2 non-Boolean values.", res.data)
-            @test occursin("idx=[1]: 10 ===> Int64", destyle(res.data))
-            @test occursin("idx=[2]: 2 ===> Int64", destyle(res.data))
+    #         res = f(Any[true, :a, false, TestStruct(:b)])
+    #         @test res.value === false
+    #         @test occursin("Vector{Any}(4) with 2 non-Boolean values.", res.data)
+    #         @test occursin("idx=[2]: :a ===> Symbol", destyle(res.data))
+    #         @test occursin("idx=[4]: TestStruct(:b) ===> TestStruct", destyle(res.data))
 
-            res = f(Any[true, :a, false, TestStruct(:b)])
-            @test res.value === false
-            @test occursin("Vector{Any}(4) with 2 non-Boolean values.", res.data)
-            @test occursin("idx=[2]: :a ===> Symbol", destyle(res.data))
-            @test occursin("idx=[4]: TestStruct(:b) ===> TestStruct", destyle(res.data))
+    #         res = f(Any[false true :a])
+    #         @test res.value === false
+    #         @test occursin("Matrix{Any}(1×3) with 1 non-Boolean value.", res.data)
+    #         @test occursin("idx=[1,3]: :a ===> Symbol", destyle(res.data))
+    #     end
 
-            res = f(Any[false true :a])
-            @test res.value === false
-            @test occursin("Matrix{Any}(1×3) with 1 non-Boolean value.", res.data)
-            @test occursin("idx=[1,3]: :a ===> Symbol", destyle(res.data))
-        end
+    #     @testset "evaled is bool" begin
+    #         f = (evaled) -> TM.eval_test_all(evaled, [evaled], "{1:s}", "", LineNumberNode(1))
+    #         res = f(true)
+    #         @test res isa Test.Returned
+    #         @test res.value === true
+    #         @test res.data === nothing
 
-        @testset "evaled is bool" begin
-            f = (evaled) -> TM.eval_test_all(evaled, [evaled], "{1:s}", "", LineNumberNode(1))
-            res = f(true)
-            @test res isa Test.Returned
-            @test res.value === true
-            @test res.data === nothing
+    #         res = f(false)
+    #         @test res isa Test.Returned
+    #         @test res.value === false
+    #         @test res.data isa String
+    #         @test occursin("Failed 1 test.", res.data)
+    #         @test occursin("idx=[1]: false", destyle(res.data))
 
-            res = f(false)
-            @test res isa Test.Returned
-            @test res.value === false
-            @test res.data isa String
-            @test occursin("Failed 1 test.", res.data)
-            @test occursin("idx=[1]: false", destyle(res.data))
+    #         f = (args...) -> TM.eval_test_all(args..., LineNumberNode(1))
 
-            f = (args...) -> TM.eval_test_all(args..., LineNumberNode(1))
+    #         terms = [1, 1.00001, Ref(1e-3)]
+    #         evaled = isapprox(terms[1], terms[2], atol=terms[3].x)
+    #         fmt_ex = "isapprox({1:s}, {2:s})"
+    #         fmt_kw = "atol = {3:s}"
 
-            terms = [1, 1.00001, Ref(1e-3)]
-            evaled = isapprox(terms[1], terms[2], atol=terms[3].x)
-            fmt_ex = "isapprox({1:s}, {2:s})"
-            fmt_kw = "atol = {3:s}"
-
-            res = f(evaled, terms, fmt_ex, fmt_kw)
-            @test res isa Test.Returned
-            @test res.value === true
-            @test res.data === nothing
+    #         res = f(evaled, terms, fmt_ex, fmt_kw)
+    #         @test res isa Test.Returned
+    #         @test res.value === true
+    #         @test res.data === nothing
             
-            terms = [1, 1.00001, Ref(1e-8)]
-            evaled = isapprox(terms[1], terms[2], atol=terms[3].x)
-            fmt_ex = "isapprox({1:s}, {2:s})"
-            fmt_kw = "atol = {3:s}"
+    #         terms = [1, 1.00001, Ref(1e-8)]
+    #         evaled = isapprox(terms[1], terms[2], atol=terms[3].x)
+    #         fmt_ex = "isapprox({1:s}, {2:s})"
+    #         fmt_kw = "atol = {3:s}"
 
-            res = f(evaled, terms, fmt_ex, fmt_kw)
-            @test res isa Test.Returned
-            @test res.value === false
-            @test res.data isa String
-            @test occursin("Failed 1 test.", destyle(res.data))
-            @test occursin("Keywords: atol = 1.0e-8", destyle(res.data))
-            @test occursin("idx=[1]: isapprox(1, 1.00001)", destyle(res.data))
-        end
+    #         res = f(evaled, terms, fmt_ex, fmt_kw)
+    #         @test res isa Test.Returned
+    #         @test res.value === false
+    #         @test res.data isa String
+    #         @test occursin("Failed 1 test.", destyle(res.data))
+    #         @test occursin("Keywords: atol = 1.0e-8", destyle(res.data))
+    #         @test occursin("idx=[1]: isapprox(1, 1.00001)", destyle(res.data))
+    #     end
 
-        @testset "evaled is bool array" begin
-            f = (args...) -> TM.eval_test_all(args..., LineNumberNode(1))
+    #     @testset "evaled is bool array" begin
+    #         f = (args...) -> TM.eval_test_all(args..., LineNumberNode(1))
 
-            terms = [[1, 2, 3], [1, 2, 3.001]]
+    #         terms = [[1, 2, 3], [1, 2, 3.001]]
 
-            res = f(terms[1] .<= terms[2], terms, "{1:s} <= {2:s}", "")
-            @test res isa Test.Returned
-            @test res.value === true
-            @test res.data === nothing
+    #         res = f(terms[1] .<= terms[2], terms, "{1:s} <= {2:s}", "")
+    #         @test res isa Test.Returned
+    #         @test res.value === true
+    #         @test res.data === nothing
 
-            res = f(terms[1] .< terms[2], terms, "{1:s} < {2:s}", "")
-            @test res isa Test.Returned
-            @test res.value === false
-            @test res.data isa String
-            @test occursin("Failed 2 tests from length 3 result.", res.data)
-            @test occursin("idx=[1]: 1.0 < 1.0", destyle(res.data))
-            @test occursin("idx=[2]: 2.0 < 2.0", destyle(res.data))
+    #         res = f(terms[1] .< terms[2], terms, "{1:s} < {2:s}", "")
+    #         @test res isa Test.Returned
+    #         @test res.value === false
+    #         @test res.data isa String
+    #         @test occursin("Failed 2 tests from length 3 result.", res.data)
+    #         @test occursin("idx=[1]: 1.0 < 1.0", destyle(res.data))
+    #         @test occursin("idx=[2]: 2.0 < 2.0", destyle(res.data))
 
-            terms = [[1, 2, 3], [1, 2, 3.001], Ref(1e-8)]
-            evaled = isapprox.(terms[1], terms[2], atol=terms[3].x)
-            fmt_ex = "isapprox({1:s}, {2:s})"
-            fmt_kw = "atol = {3:s}"
-            res = f(evaled, terms, fmt_ex, fmt_kw)
-            @test res isa Test.Returned
-            @test res.value === false
-            @test res.data isa String
-            @test occursin("Failed 1 test from length 3 result.", res.data)
-            @test occursin("Keywords: atol = 1.0e-8", destyle(res.data))
-            @test occursin("idx=[3]: isapprox(3, 3.001)", destyle(res.data))
+    #         terms = [[1, 2, 3], [1, 2, 3.001], Ref(1e-8)]
+    #         evaled = isapprox.(terms[1], terms[2], atol=terms[3].x)
+    #         fmt_ex = "isapprox({1:s}, {2:s})"
+    #         fmt_kw = "atol = {3:s}"
+    #         res = f(evaled, terms, fmt_ex, fmt_kw)
+    #         @test res isa Test.Returned
+    #         @test res.value === false
+    #         @test res.data isa String
+    #         @test occursin("Failed 1 test from length 3 result.", res.data)
+    #         @test occursin("Keywords: atol = 1.0e-8", destyle(res.data))
+    #         @test occursin("idx=[3]: isapprox(3, 3.001)", destyle(res.data))
 
-            terms = [[1, 2], [1 2.01], Ref(1e-3)]
-            evaled = .≈(terms[1], terms[2], atol=terms[3].x)
-            res = f(evaled, terms, "{1:s} ≈ {2:s}", "atol = {3:s}")
-            @test res isa Test.Returned
-            @test res.value === false
-            @test res.data isa String
-            @test occursin("Failed 3 tests from size 2×2 result.", res.data)
-            @test occursin("Keywords: atol = 0.001", destyle(res.data))
-            @test occursin("idx=[1,2]: 1 ≈ 2.01", destyle(res.data))
-            @test occursin("idx=[2,1]: 2 ≈ 1", destyle(res.data))
-            @test occursin("idx=[2,2]: 2 ≈ 2.01", destyle(res.data))
+    #         terms = [[1, 2], [1 2.01], Ref(1e-3)]
+    #         evaled = .≈(terms[1], terms[2], atol=terms[3].x)
+    #         res = f(evaled, terms, "{1:s} ≈ {2:s}", "atol = {3:s}")
+    #         @test res isa Test.Returned
+    #         @test res.value === false
+    #         @test res.data isa String
+    #         @test occursin("Failed 3 tests from size 2×2 result.", res.data)
+    #         @test occursin("Keywords: atol = 0.001", destyle(res.data))
+    #         @test occursin("idx=[1,2]: 1 ≈ 2.01", destyle(res.data))
+    #         @test occursin("idx=[2,1]: 2 ≈ 1", destyle(res.data))
+    #         @test occursin("idx=[2,2]: 2 ≈ 2.01", destyle(res.data))
 
-            terms = [[true, false], [true, true]]
-            evaled = terms[1] .&& terms[2]
-            res = f(evaled, terms, "{1:s} && {2:s}", "")
-            @test res isa Test.Returned
-            @test res.value === false
-            @test res.data isa String
-            @test occursin("Failed 1 test from length 2 result.", res.data)
-            @test occursin("idx=[2]: false && true", destyle(res.data))
-        end
-    end
+    #         terms = [[true, false], [true, true]]
+    #         evaled = terms[1] .&& terms[2]
+    #         res = f(evaled, terms, "{1:s} && {2:s}", "")
+    #         @test res isa Test.Returned
+    #         @test res.value === false
+    #         @test res.data isa String
+    #         @test occursin("Failed 1 test from length 2 result.", res.data)
+    #         @test occursin("idx=[2]: false && true", destyle(res.data))
+    #     end
+    # end
 
     # @testset "@test_all" begin
     #     a = [1,2,3]

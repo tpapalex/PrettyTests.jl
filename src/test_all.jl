@@ -20,19 +20,15 @@ const DISPLAYABLE_FUNCS = Set([
 ])
 
 # Lists of operators to treat specially
-const OPS_LOGICAL = (:&&, :||, :.&&, :.||) # TODO(tpapalex) add XOR (⊻)
-const OPS_NEGATION = (:!, :.!)
-const OPS_APPROX = (:≈, :.≈, :≉, :.≉)  
+const OPS_LOGICAL = (:.&&, :.||) # TODO(tpapalex) add XOR (.⊻)
+const OPS_APPROX = (:.≈, :.≉)  
 
 _is_vecop = x::Symbol -> first(string(x)) == '.'
 _is_splat = x -> isa(x, Expr) && x.head === :...
 
 #################### Expression Parsing ###################
 
-
-
 function add_keywords!(ex, kws...)
-
     if length(kws) == 0
         return ex
     end
@@ -40,7 +36,11 @@ function add_keywords!(ex, kws...)
     orig_ex = ex
 
     # Recursively dive through negations.
-    while is_negation(ex)
+    while isa(ex, Expr) && 
+        ex.head === :call && 
+        (ex.args[1] === :.! || ex.args[1] === :!) && 
+        length(ex.args) == 2
+
         ex = ex.args[2]
     end
 
@@ -74,23 +74,13 @@ function preprocess(ex)
     # if arguments are splats, or if there are extra keywords.
     if isa(ex, Expr) && 
         ex.head === :call &&   
-        (
-            ex.args[1] === :(==) || 
-            ex.args[1] === :.==  || 
-            Base.operator_precedence(ex.args[1]) == COMPARISON_PREC
-        ) &&
+        Base.operator_precedence(ex.args[1]) == COMPARISON_PREC &&
+        _is_vecop(ex.args[1]) && 
         length(ex.args) == 3 && # Excludes cases where kws were added
         !any(a -> isa(a, Expr) && a.head ∈ (:kw, :parameters, :...), ex.args)
 
         return Expr(:comparison, ex.args[2], ex.args[1], ex.args[3])
 
-    # Mark <: and >: as :comparison expressions
-    elseif isa(ex, Expr) && 
-        Base.operator_precedence(ex.head) == COMPARISON_PREC &&
-        !_is_splat(ex.args[1]) &&
-        !_is_splat(ex.args[2]) 
-
-        return Expr(:comparison, ex.args[1], ex.head, ex.args[2])
 
     # Mark vectorized .<: and .>: as :comparison expressions
     elseif isa(ex, Expr) && 
@@ -136,7 +126,7 @@ end
 function is_negation(ex) 
     return isa(ex, Expr) && 
         ex.head === :call && 
-        ex.args[1] ∈ OPS_NEGATION && 
+        ex.args[1] === :.! && 
         length(ex.args) == 2
 end
 
@@ -150,7 +140,23 @@ end
 # Most comparison expressions, e.g. a == b, a <= b <= c, a ≈ B. Note that :call
 # expressions with comparison ops are chanegd to :comparison in preprocess()
 function is_comparison(ex)
-    return isa(ex, Expr) && ex.head === :comparison
+    if isa(ex, Expr) && ex.head === :comparison
+        # Check that all ops are vectorized
+        for i in 2:2:length(ex.args)
+            if !_is_vecop(ex.args[i])
+                return false
+            end
+        end
+        # And that non of the arguments are splats
+        for i in 1:2:length(ex.args)
+            if _is_splat(ex.args[i])
+                return false
+            end
+        end
+        return true
+    else
+        return false
+    end
 end
 
 # Special case for nicer formatting of ≈/≉ with keyword arguments (atol or rtol)
@@ -176,18 +182,20 @@ end
 # operators with printable arguments
 function is_displaycall(ex)
     if isa(ex, Expr) && 
-        (ex.head === :call || ex.head === :.) && 
+        ex.head === :. && 
         ex.args[1] ∈ DISPLAYABLE_FUNCS
 
-        # Check for non-displayable parameters/kwargs
-        args = ex.head === :call ? ex.args[2:end] : ex.args[2].args
+        # Extract arguments
+        args = ex.args[2].args
 
+        # Check at least one positional argument
         is_not_positional = a -> isa(a, Expr) && a.head ∈ (:kw, :parameters, :...)
         n_args = length(args) - sum(is_not_positional, args; init=0)
         if n_args == 0
             return false
         end
 
+        # Check that parameters are all keywords
         par_ex = args[1]
         if isa(par_ex, Expr) && par_ex.head === :parameters
             for a in par_ex.args
@@ -198,11 +206,11 @@ function is_displaycall(ex)
             end
         end
 
-        # Positional arguments
+        # Check that positional arguments are not splats
         for a in args
             isa(a, Expr) && a.head ∈ (:kw, :parameters) && continue
             # If splatted argument, then do not support display
-            if isa(a, Expr) && a.head === :...
+            if _is_splat(a)
                 return false
             end
         end
@@ -227,8 +235,7 @@ end
 # Anonymous function that can be displayed
 function is_mappable(ex)
     return isa(ex, Expr) && 
-        ex.head === :-> && 
-        length(kws) == 1
+        ex.head === :->
 end
 
 #################### Escaped args updaters ###################
@@ -282,7 +289,7 @@ function update_escaped_negation!(args, ex; isoutmost=false)
 
     # No wrapping parenthese needed for negation, even if outmost
     str_ex = string(ex.args[1]) * str_arg
-    fmt_ex = "!" * fmt_arg
+    fmt_ex = string_unvec(ex.args[1]) * fmt_arg
 
     return ex, str_ex, fmt_ex, ""
 end
@@ -363,9 +370,10 @@ function update_escaped_argsapprox!(args, ex; isoutmost=false)
 end
 
 function update_escaped_displaycall!(args, ex; isoutmost=false)
+    #TODO(tpapalex): this could use some cleaning up
 
     # Extract arguments and starting index depending on whether it's a :call or :.
-    ex_args, i = ex.head === :call ? (ex.args, 2) : (ex.args[2].args, 1)
+    ex_args, i = ex.args[2].args, 1
 
     # Positional arguments. Recall that :parameters have been converted to keywords 
     # in preprocess() and will always come after all positional arguments.
@@ -396,7 +404,7 @@ function update_escaped_displaycall!(args, ex; isoutmost=false)
     end
 
     # Finalize string formatting
-    str_ex = string(ex.args[1]) * (ex.head === :call ? "(" : ".(") * 
+    str_ex = string(ex.args[1]) *  ".(" * 
         chopsuffix(str_args, ", ") * 
         (length(str_kw) == 0 ? "" : ", ") *
         chopsuffix(str_kw, ", ") * ")"
@@ -415,10 +423,11 @@ function update_escaped_displaycall!(args, ex; isoutmost=false)
 end
 
 function update_escaped_fallback!(args, ex; isoutmost::Bool=false)
+
     # Add escaped term to terms
     push!(args, esc(ex))
 
-    # If expression is a non-operator :call or :., then no need to parenthesize
+    # Determine if parentheses are needed around the expression
     parens = if isoutmost
         false
     elseif !isa(ex, Expr)
