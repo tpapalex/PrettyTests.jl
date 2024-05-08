@@ -29,20 +29,14 @@ _is_splat = x -> isa(x, Expr) && x.head === :...
 
 #################### Expression Parsing ###################
 
-# Internal function that's called at the top-level @test_all macro call. Returns `ex` 
-# with all negations recursively removed, and Bool of whether it should be negated once.
-function extract_negation(ex)
-    negate = false
-    while is_negation(ex)
-        negate = !negate
-        ex = ex.args[2]
-    end
-    return ex, negate
-end
 
-add_keywords!(ex) = ex
-function add_keywords!(ex, kws)
-    
+
+function add_keywords!(ex, kws...)
+
+    if length(kws) == 0
+        return ex
+    end
+
     orig_ex = ex
 
     # Recursively dive through negations.
@@ -67,14 +61,14 @@ function add_keywords!(ex, kws)
         end
     end
 
-    return ex
+    return orig_ex
 end
 
 # Internal function that performs some pre-processing on a single expression. This is called
 # first in any `process_...` call to make pretty arguments.
 #   2) Changes :calls with binary comparison operator and no args as :comparison 
 #   3) Changes <:, >: expressions with no args to :comparison
-function _preprocess(ex)
+function preprocess(ex)
 
     # Normalize :call with comparison-precedence operator to :comparison. Do not do 
     # if arguments are splats, or if there are extra keywords.
@@ -154,7 +148,7 @@ function is_logical(ex)
 end
 
 # Most comparison expressions, e.g. a == b, a <= b <= c, a ≈ B. Note that :call
-# expressions with comparison ops are chanegd to :comparison in _preprocess()
+# expressions with comparison ops are chanegd to :comparison in preprocess()
 function is_comparison(ex)
     return isa(ex, Expr) && ex.head === :comparison
 end
@@ -221,7 +215,7 @@ end
 
 # Convenience function, returns true if the expression doesn't fall in the other categories
 function is_fallback(ex)
-    ex = _preprocess(ex)
+    ex = preprocess(ex)
     is_negation(ex) && return false
     is_logical(ex) && return false
     is_comparison(ex) && return false
@@ -266,7 +260,7 @@ with ARG[i].
 """
 function update_escaped!(args, ex; isoutmost=false)
     # Pre-process the expression first, to normalize comparisons, fix keywords etc.
-    ex = _preprocess(ex)
+    ex = preprocess(ex)
     if is_negation(ex)
         return update_escaped_negation!(args, ex; isoutmost=isoutmost)
     elseif is_logical(ex)
@@ -374,7 +368,7 @@ function update_escaped_displaycall!(args, ex; isoutmost=false)
     ex_args, i = ex.head === :call ? (ex.args, 2) : (ex.args[2].args, 1)
 
     # Positional arguments. Recall that :parameters have been converted to keywords 
-    # in _preprocess() and will always come after all positional arguments.
+    # in preprocess() and will always come after all positional arguments.
     str_args, fmt_args = "", ""
     while i <= length(ex_args) && !(isa(ex_args[i], Expr) && ex_args[i].head === :kw)
         # Recursively update terms for both arguments
@@ -429,7 +423,7 @@ function update_escaped_fallback!(args, ex; isoutmost::Bool=false)
         false
     elseif !isa(ex, Expr)
         false
-    elseif ex.head === :hcat || ex.head == :vcat
+    elseif ex.head === :vect || ex.head === :tuple || ex.head === :hcat || ex.head === :vcat
         false
     elseif (ex.head === :call || ex.head === :.) && Base.operator_precedence(ex.head) == 0
         false
@@ -451,7 +445,7 @@ end
 
 #################### Pretty Printing ###################
 # Returns string.(idxs), but nicely justified within each dimension.
-function _string_idxs(idxs) 
+function string_idxs(idxs) 
     if eltype(idxs) <: CartesianIndex
         D = length(idxs[1])
         max_len = [maximum(idx -> length(string(idx.I[d])), idxs) for d in 1:D]
@@ -463,8 +457,7 @@ function _string_idxs(idxs)
     end
 end
 
-# Internal function
-function print_failures(io, idxs, print_idx_message; prefix="    ", max_vals=10)
+function print_failures(io, idxs, print_idx_message; prefix="              ", max_vals=10)
     # Figure out if we need to abbreviate to the top/bottom `max_vals` because there
     # are too many failures.
     if length(idxs) > max_vals
@@ -473,7 +466,7 @@ function print_failures(io, idxs, print_idx_message; prefix="    ", max_vals=10)
     else
         abbrev_i = 0
     end
-    str_idxs = _string_idxs(idxs)
+    str_idxs = string_idxs(idxs)
 
     for (i, idx) in enumerate(idxs)
         print(io, "\n", prefix, "idx=[", str_idxs[i], "]: ")
@@ -486,23 +479,23 @@ function print_failures(io, idxs, print_idx_message; prefix="    ", max_vals=10)
     return nothing
 end
 
-function eval_test_all(evaled, terms, fmt_ex, fmt_kw, source::LineNumberNode=LineNumberNode(1))
+function eval_test_all(
+        @nospecialize(evaled),
+        @nospecialize(terms),
+        fmt_ex, 
+        fmt_kw, 
+        source::LineNumberNode=LineNumberNode(1))
+
     # If the result is not an array or Boolean,...
     if !(typeof(evaled) <: AbstractArray) && !(typeof(evaled) <: Bool)
-        # Create a string of the returned type, and pass it as the result `value`.
-        # This will trigger a Test.Fail(:test_nonbool)
-        io = IOBuffer()
-        print(io, evaled)
-        printstyled(io, " ===> ", typeof(evaled), color=:light_yellow)
-        return Returned(String(take!(io)), nothing, source)
+        return Returned(all(evaled), nothing, source)
     end
 
     # Broadcast the terms and check that the size matches the evaled expression, 
     # otherwise throw an internal error.
     broadcasted_terms = Base.broadcasted(tuple, terms...)
     if size(broadcasted_terms) != size(evaled)
-        error("@test_all evaluated expression not same size as broadcasted terms \
-              $(size(evaled)) != $(size(broadcasted_terms))")
+        return Returned(all(evaled), nothing, source)
     end
 
     # If result is a non-Boolean array, create a nicer message showing the non-boolean 
@@ -523,12 +516,12 @@ function eval_test_all(evaled, terms, fmt_ex, fmt_kw, source::LineNumberNode=Lin
         print(io, " with ", length(idxs), " non-Boolean value", length(idxs) == 1 ? "." : "s.")
 
         print_idx_message = (io, idx) -> begin
-            print(io, evaled[idx])
+            print(io, repr(evaled[idx]))
             printstyled(IOContext(io, :color => true), " ===> ", typeof(evaled[idx]))
         end
         print_failures(io, idxs, print_idx_message)
 
-        return Returned(String(take!(io)), nothing, source)
+        return Returned(false, String(take!(io)), source)
     end
 
     # From here we can assume that result is a boolean array
@@ -557,511 +550,73 @@ function eval_test_all(evaled, terms, fmt_ex, fmt_kw, source::LineNumberNode=Lin
         printfmt(io, fmt_kw, first(broadcasted_terms)...)
     end
 
+    if !isa(fmt_ex, FormatExpr)
+        fmt_ex = FormatExpr(fmt_ex)
+    end
+
     print_idx_message = (io, idx) -> begin
-        printfmt(io, fmt_ex, broadcasted_terms[idx]...)
+        printfmt(io, fmt_ex, repr.(broadcasted_terms[idx])...)
     end
     print_failures(io, idxs, print_idx_message)
 
     return Returned(false, String(take!(io)), source)
 end
 
-
-# function _prettyprint_failures(@nospecialize(bitarray), failure_printer, negate=false; max_vals=10) # TODO(tpapalex): add 'wrap_negation' kwarg?
-
-#     # Finda all failing indices. 
-#     idxs = findall(x -> !isa(x, Bool) || (x == negate), bitarray)
-
-#     # If no falures, return no message
-#     if length(idxs) == 0
-#         return nothing
-#     end
-
-#     # Write failures into buffer:
-#     io = IOBuffer()
-
-#     # Write number of failures:
-#     print(io, "Failed ", length(idxs), " test", length(idxs) == 1 ? "" : "s")
-
-#     # Write dimension of bitarray:
-#     sz = size(bitarray)
-#     if length(sz) == 0
-#         print(io, ".")
-#     elseif length(sz) == 1
-#         print(io, " from length ", sz[1], " result.")
-#     else
-#         print(io, " from size ", join(sz, "×"), " result.")
-#     end
-
-#     # Figure out if we need to abbreviate to the top/bottom `max_vals` because there
-#     # are too many failures.
-#     if length(idxs) > max_vals
-#         abbrev_i = max_vals ÷ 2
-#         idxs = idxs[[1:abbrev_i; end-abbrev_i+1:end]]
-#     else
-#         abbrev_i = 0
-#     end
-
-#     # Get pretty-stringified indices
-#     str_idxs = _string_idxs_justify(idxs)
-
-#     for (i, idx) in enumerate(idxs)
-#         print(io, "\n    idx=[", str_idxs[i], "]: ")
-#         negate && print(io, "!(")
-#         failure_printer(io, idx)
-#         negate && print(io, ")")
-#         if !isa(bitarray[idx], Bool)
-#             printstyled(IOContext(io, :color=>true), " non-Boolean ===> ", bitarray[idx], color=:light_yellow)
-#         end
-#         if (i == abbrev_i) && (abbrev_i > 0)
-#             print(io, "\n    ⋮")
-#         end
-#     end
-#     seekstart(io)
-#     return String(take!(io))
-# end
-
-# function _get_escaped_args(ex_args, kws) # TODO(tpapalex): should probably not have this throw errors, since we might want to use fall back if can't parse arguments
-#     escaped_args = []
-#     escaped_kwargs = []
-
-#     # Keywords that occur before `;` # TODO(tpapalex): these are after `;` in examples tried? Comment mistake in Test?
-#     for a in ex_args
-#         if isa(a, Expr) && a.head === :kw
-#             push!(escaped_kwargs, :(Expr(:kw, $(QuoteNode(a.args[1])),$(esc(a.args[2])))))
-#         end
-#     end
-
-#     # Keywords that occur after ';' # TODO(tpapalex): these are before `;` in examples I tried? Comment mistake in Test?
-#     parameters_expr = ex_args[1]
-#     if isa(parameters_expr, Expr) && parameters_expr.head === :parameters
-#         for a in parameters_expr.args
-#             if isa(a, Expr) && a.head === :kw
-#                 push!(escaped_kwargs, :(Expr(:kw, $(QuoteNode(a.args[1])), $(esc(a.args[2])))))
-#             else
-#                 error("invalid test macro call: cannot pretty with splat (...) arguments. Use `disable_pretty=true` to disable pretty printing.")
-#             end
-#         end
-#     end
-
-#     # Positional arguments
-#     for a in ex_args
-#         isa(a, Expr) && a.head in (:kw, :parameters) && continue
-#         if isa(a, Expr) && a.head === :...
-#             error("invalid test macro call: cannot pretty print with splat (...) arguments. Use `disable_pretty=true` to disable pretty printing.")
-#         else
-#             push!(escaped_args, esc(a))
-#         end
-#     end
-
-#     # Add passed keywords
-#     for kw in kws 
-#         if !isa(kw, Expr) || kw.head !== :(=)
-#             error("invalid test macro call: extra arguments must be keywords of the form kw=val")
-#         end
-#         push!(escaped_kwargs, :(Expr(:kw, $(QuoteNode(kw.args[1])), $(esc(kw.args[2])))))
-#     end
-
-#     return escaped_args, escaped_kwargs
-# end
-
-# # GENERAL UTILITIES
-
-# function _get_preprocessed_expr(ex, kws...)
-
-#     negate = false
-
-#     # Extract initial negation
-#     if isa(ex, Expr) && ex.head === :call && (ex.args[1] === :! || ex.args[1] === :.!)
-#         negate = true
-#         ex = ex.args[2]
-#     end
-
-#     # Normalize comparison calls with printable args to :comparison
-#     if isa(ex, Expr) && 
-#         ex.head === :call && 
-#         length(ex.args) == 3 && 
-#         length(kws) == 0 && # To push ≈/≉ to 
-#         (ex.args[1] === :(==) || Base.operator_precedence(ex.args[1]) == COMPARISON_PREC) &&
-#         !_is_splat(ex.args[2]) && 
-#         !_is_splat(ex.args[3]) 
-#         ex = Expr(:comparison, ex.args[2], ex.args[1], ex.args[3])
-
-#     # Mark <: and >: as :comparison expressions
-#     elseif isa(ex, Expr) && length(ex.args) == 2 &&
-#         !_is_splat(ex.args[1]) && !_is_splat(ex.args[2]) &&
-#         Base.operator_precedence(ex.head) == COMPARISON_PREC
-
-#         ex = Expr(:comparison, ex.args[1], ex.head, ex.args[2])
-
-#     # Mark .<: and .>: as :comparison expressions
-#     elseif isa(ex, Expr) &&  ex.head === :call && length(ex.args) == 3 && 
-#         !_is_splat(ex.args[2]) && !_is_splat(ex.args[3]) && 
-#         (ex.args[1] === :.<: || ex.args[1] === :.>:)
-
-#         ex = Expr(:comparison, ex.args[2], ex.args[1], ex.args[3])
-#     end
-
-#     return ex, negate
-# end
-
-# # COMPARISON EXPRESSION
-# function _is_comparison(ex, kws)
-#     return isa(ex, Expr) && 
-#         ex.head === :comparison
-# end
-
-# function _result_comparison(ex, kws, source, negate=false)
-#     if length(kws) > 0
-#         error("invalid test macro call: extra arguments with comparison $(join(kws, " "))")
-#     end
-
-#     # Replace all operators with vectorized versions (without loss of generality?)
-#     for i in 2:2:length(ex.args)
-#         if !_is_vecop(ex.args[i])
-#             ex.args[i] = Symbol(:., ex.args[i])
-#         end
-#     end
-
-#     # Quote operators, escape arguments
-#     escaped_args = [i % 2 == 1 ? esc(arg) : QuoteNode(arg) for (i, arg) in enumerate(ex.args)]
-
-#     testret = quote
-#         _eval_testall_comparison(
-#             Expr(:comparison, $(escaped_args...)),
-#             $(QuoteNode(source)),
-#             $(QuoteNode(negate))
-#         )
-#     end
-
-#     return testret
-# end
-
-# function _eval_testall_comparison(ex::Expr, source::LineNumberNode, negate::Bool=false)
-
-#     if ex.head === :comparison # Most calls have been normalized to this form
-#         terms = ex.args[1:2:end]
-#         ops = ex.args[2:2:end]
-#     else # ex.head === :call, only for .≈ and .≉ with extra kwargs
-#         terms = ex.args[2:3]
-#         ops = [ex.args[1]]
-#     end
-
-#     # Create a quoted expression for pretty-printing failures
-#     quoted_ex = Expr(:comparison)
-#     for i in eachindex(ops)
-#         push!(quoted_ex.args, 0) # Placeholder, will be replaced with broadcast values later
-#         push!(quoted_ex.args, Symbol(replace(string(ops[i]), r"^." => ""))) # Unvectorized operator
-#     end
-#     push!(quoted_ex.args, 0) # Placeholder
-    
-#     # Evaluate to get broadcasted bit array, and negate if necessary:
-#     bitarray = eval(ex)
-
-#     # Get broadcasted terms for accessing individual elements
-#     broadcasted_terms = Base.broadcasted(tuple, terms...)
-
-#     # Function to print the unvectorized expression with broadcasted terms spliced in.
-#     failure_printer = (io, idx) -> begin
-#         terms = broadcasted_terms[idx]
-#         for i in eachindex(terms)
-#             quoted_ex.args[2*i-1] = terms[i]
-#         end
-#         print(io, quoted_ex)
-#     end
-
-#     msg = _prettyprint_failures(bitarray, failure_printer, negate)
-
-#     return Returned(msg === nothing, msg, source)
-# end
-
-# # ISAPPROX SPECIAL CASE (to support kwargs)
-# function _is_approx_specialcase(ex, kws)
-#     return isa(ex, Expr) && 
-#         ex.head === :call && 
-#         length(ex.args) >= 3 && 
-#         !_is_splat(ex.args[2]) && 
-#         !_is_splat(ex.args[3]) &&
-#         ex.args[1] ∈ APPROX_OPS
-# end
-
-# function _result_approx_specialcase(ex, kws, source, negate=false)
-#     # Replace operator with vectorized version
-#     if !_is_vecop(ex.args[1])
-#         ex.args[1] = Symbol(:., ex.args[1])
-#     end
-#     escaped_func = QuoteNode(ex.args[1])
-#     escaped_args, escaped_kwargs = _get_escaped_args(ex.args[2:end], kws)
-    
-#     testret = quote
-#         _eval_testall_comparison(
-#             Expr(:call, $(escaped_func), $(escaped_args...), $(escaped_kwargs...)),
-#             $(QuoteNode(source)),
-#             $(QuoteNode(negate))
-#         )
-#     end
-
-#     return testret
-# end
-
-# # DISPLAYED FUNCTION
-# function _is_displayed_func(ex, kws=())
-#     if !isa(ex, Expr) 
-#         return false
-#     elseif ex.head === :call && ex.args[1] ∈ DISPLAYABLE_FUNCS
-#         return length(ex.args) >= 2 && all(a -> !_is_splat(a), ex.args[2:end])
-#     elseif ex.head === :. && ex.args[1] ∈ DISPLAYABLE_FUNCS
-#         return length(ex.args[2].args) >= 1 && all(a -> !_is_splat(a), ex.args[2].args)
-#     else
-#         return false
-#     end
-# end
-
-# function _result_displayed_func(ex, kws, source, negate)
-#     # Treat .≈ and .≉ as special case, because they are not functions that can be vectorized
-#     if ex.head === :call && ex.args[1] ∈ (:.≈, :.≉)
-#         escaped_args, escaped_kwargs = _get_escaped_args(ex.args[2:end], kws)
-#     end
-    
-#     # Otherwise, we can just vectorize the call
-#     ex = Expr(:., ex.args[1], Expr(:tuple, ex.args[2:end]...))
-#     escaped_func = QuoteNode(ex.args[1])
-#     escaped_args, escaped_kwargs = _get_escaped_args(ex.args[2].args, kws)
-
-#     return quote
-#         _eval_testall_displayed_func(
-#             Expr(:., $(escaped_func), Expr(:tuple, $(escaped_args...), $(escaped_kwargs...))),
-#             $(QuoteNode(source)),
-#             $(QuoteNode(negate))
-#         )
-#     end
-# end
-
-# function _eval_testall_displayed_func(ex::Expr, source::LineNumberNode, negate::Bool=false)
-
-#     # Extract the arguments which are presumably broadcasted
-#     terms = [a for a in ex.args[2].args if !isa(a, Expr)]
-
-#     # Create a quoted (unvectorized) expression for pretty-printing failures.
-#     quoted_ex = Expr(:call, ex.args[1], zeros(Bool, length(terms))...) # args
-
-#     # Evaluate to get broadcasted bit array, and negate if necessary:
-#     bitarray = eval(ex)
-
-#     # Get broadcasted terms for accessing individual elements
-#     broadcasted_terms = Base.broadcasted(tuple, terms...)
-
-#     # Function to print the unvectorized expression with broadcasted terms spliced in.
-#     failure_printer = (io, idx) -> begin
-#         terms = broadcasted_terms[idx]
-#         for i in eachindex(terms)
-#             quoted_ex.args[1+i] = terms[i]
-#         end
-#         print(io, quoted_ex)
-#     end
-
-#     msg = _prettyprint_failures(bitarray, failure_printer, negate)
-
-#     return Returned(msg === nothing, msg, source)
-# end
-
-# function _is_anonymous_map(ex, kws)
-#     return isa(ex, Expr) && ex.head === :->
-# end
-
-# function _result_anonymous_map(ex, kws, source, negate)
-#     # Check that there's an extra keyword argument, for the second argument of map
-#     if length(kws) == 0
-#         error("invalid test macro call: no expression given for mapping")
-#     elseif length(kws) > 1
-#         error("invalid test macro call: unused arguments $(join(kws, " "))")
-#     end
-
-#     # Create a mapping expression
-#     return quote
-#         _eval_testall_map(
-#             Expr(:call, :map, $(esc(ex)), $(esc(kws[1]))),
-#             $(QuoteNode(source)), 
-#             $(QuoteNode(negate))
-#         )
-#     end
-# end
-
-# function _eval_testall_map(ex::Expr, source::LineNumberNode, negate::Bool=false)
-
-#     terms = ex.args[3]
-    
-#     # Evaluate to get broadcasted bit array, and negate if necessary:
-#     bitarray = eval(ex)
-
-#     # Function to print the unvectorized expression with broadcasted terms spliced in.
-#     failure_printer = (io, idx) -> begin
-#         print(io, "f(", terms[idx], ")")
-#     end
-
-#     msg = _prettyprint_failures(bitarray, failure_printer, negate)
-
-#     return Returned(msg === nothing, msg, source)
-# end
-
-# # FALLBACK 
-# function _result_fallback(ex, kws, source)
-#     if length(kws) > 0
-#         error("invalid test macro call: unused arguments $(join(kws, " "))")
-#     end
-#     return :(
-#         _eval_testall_fallback(
-#             $(esc(ex)),
-#             $(QuoteNode(source))
-#         )
-#     )
-# end
-
-# function _eval_testall_fallback(@nospecialize(bitarray), source::LineNumberNode)
-#     msg = _prettyprint_failures(bitarray, (io, idx) -> nothing, false)
-#     return Returned(msg === nothing, msg, source)
-# end
-
-
-# # Finally
-# function get_test_all_result(ex, kws, source, quoted=false)
-
-#     orig_ex = ex
-#     ex, negate = _get_preprocessed_expr(ex, kws...)
-
-#     if _is_comparison(ex, kws)
-#         #@info "comparison"
-#         testret = _result_comparison(ex, kws, source, negate)
-#         quoted_ex = Expr(:call, :all, ex)
-#     elseif _is_approx_specialcase(ex, kws)
-#         #@info "special case ≈ or ≉"
-#         testret = _result_approx_specialcase(ex, kws, source, negate)
-#         quoted_ex = ex
-#     elseif _is_displayed_func(ex, kws)
-#         #@info "displayed func"
-#         testret = _result_displayed_func(ex, kws, source, negate)
-#         quoted_ex = ex
-#     elseif _is_anonymous_map(ex, kws)
-#         #@info "mapped anonymous"
-#         testret = _result_anonymous_map(ex, kws, source, negate)
-#         quoted_ex = ex
-#     else 
-#         #@info "fallback"
-#         testret = _result_fallback(orig_ex, kws, source)
-#         quoted_ex = ex
-#     end
-
-#     if negate
-#         quoted_ex = Expr(:call, :.!, quoted_ex)
-#     end
-
-#     result = quote
-#         try
-#             $testret
-#         catch _e
-#             _e isa InterruptException && rethrow()
-#             Threw(_e, Base.current_exceptions(), $(QuoteNode(source)))
-#         end
-#     end
-
-#     result, quoted_ex
-# end
-
-# """
-#     @test_all ex
-
-# Test that all(ex) true.
-# """
-# macro test_all(ex, kws...) #TODO(tpapalex): add 'quoted' argument
-#     kws, broken, skip = extract_broken_skip_keywords(kws...)
-#     kws, quoted = extract_keyword(:quoted, kws...)
-
-#     result, quoted_ex = get_test_all_result(ex, kws, __source__, quoted)
-#     quoted_ex = Expr(:inert, quoted_ex)
-#     quote 
-#         if $(length(skip) > 0 && esc(skip[1]))
-#             record(get_testset(), Broken(:skipped, $quoted_ex))
-#         else
-#             let _do = $(length(broken) > 0 && esc(broken[1])) ? do_broken_test : do_test
-#                 _do($result, $quoted_ex)
-#             end
-#         end
-#     end
-# end
-
-# function _recurse_stringify_logical(ex, toplevel=true)
-#     if _is_logical_binary(ex)
-#         lhs = _recurse_stringify_logical(ex.args[1], false)
-#         rhs = _recurse_stringify_logical(ex.args[2], false)
-#         return lhs * " " * string(ex.head) * " " * rhs
-#     elseif _is_logical_unary(ex)
-#         arg = _recurse_stringify_logical(ex.args[2], false)
-#         return string(ex.args[1]) * arg
-#     elseif !isa(ex, Expr)
-#         return string(ex)
-#     elseif (ex.head === :call || ex.head === :.) && Base.operator_precedence(ex.args[1]) == 0
-#         return string(ex)
-#     elseif toplevel
-#         return string(ex)
-#     else
-#         return "(" * string(ex) * ")"
-#     end
-# end
-
-# function _recurse_vectorize_logical!(ex)
-#     if _is_logical_binary(ex)
-#         if !_is_vecop(ex.head)
-#             ex.head = Symbol(:., ex.head)
-#         end
-#         _recurse_vectorize_logical!(ex.args[1])
-#         _recurse_vectorize_logical!(ex.args[2])
-#     elseif _is_logical_unary(ex)
-#         if !_is_vecop(ex.args[1])
-#             ex.args[1] = Symbol(:., ex.args[1])
-#         end
-#         _recurse_vectorize_logical!(ex.args[2])
-#     end
-#     return ex
-# end
-
-# function _recurse_vectorize!(ex, kws = ())
-#     if _is_logical_binary(ex)
-#         if !_is_vecop(ex.head) 
-#             ex.head = Symbol(:., ex.head)
-#         end
-#         _recurse_vectorize!(ex.args[1])
-#         _recurse_vectorize!(ex.args[2])
-#     elseif _is_logical_unary(ex)
-#         if !_is_vecop(ex.args[1])
-#             ex.args[1] = Symbol(:., ex.args[1])
-#         end
-#         _recurse_vectorize!(ex.args[2])
-#     elseif _is_comparison(ex, kws)
-#         for i in 2:2:length(ex.args)
-#             if !_is_vecop(ex.args[i])
-#                 ex.args[i] = Symbol(:., ex.args[i])
-#             end
-#         end
-#     elseif _is_approx_specialcase(ex, kws)
-#         if !_is_vecop(ex.args[1])
-#             ex.args[1] = Symbol(:., ex.args[1])
-#         end
-#     elseif _is_displayed_func(ex, kw)
-#         if ex.head === :call && ex.args[1] ∉ APPROX_OPS # TODO(tpapalex) The second predicate I think is unnecessary
-
-
-#     elseif _is_displayed_func(ex, kws)
-#         #@info "displayed func"
-#         testret = _result_displayed_func(ex, kws, source, negate)
-#         quoted_ex = ex
-#     elseif _is_anonymous_map(ex, kws)
-#         #@info "mapped anonymous"
-#         testret = _result_anonymous_map(ex, kws, source, negate)
-#         quoted_ex = ex
-#     else 
-#         #@info "fallback"
-#         testret = _result_fallback(orig_ex, kws, source)
-#         quoted_ex = ex
-#     end
-# end
-
-""
+function get_test_all_result(ex, source)
+    escaped_args = []
+    mod_ex, str_ex, fmt_ex, fmt_kw = update_escaped!(escaped_args, ex; isoutmost=true)
+
+    result = quote
+        try
+            let ARG = [$(escaped_args...)]
+                eval_test_all(
+                    eval($(mod_ex)), 
+                    ARG, 
+                    $(fmt_ex), 
+                    $(fmt_kw), 
+                    $(QuoteNode(source))
+                )
+            end
+        catch _e
+            _e isa InterruptException && rethrow()
+            Threw(_e, Base.current_exceptions(), $(QuoteNode(source)))
+        end
+    end
+
+    return result, str_ex
+end
+
+macro test_all(ex, kws...)
+    # Collect the broken/skip keywords and remove them from the rest of keywords
+    broken = [kw.args[2] for kw in kws if kw.args[1] === :broken]
+    skip = [kw.args[2] for kw in kws if kw.args[1] === :skip]
+    kws = filter(kw -> kw.args[1] ∉ (:skip, :broken), kws)
+    # Validation of broken/skip keywords
+    for (kw, name) in ((broken, :broken), (skip, :skip))
+        if length(kw) > 1
+            error("invalid test macro call: cannot set $(name) keyword multiple times")
+        end
+    end
+    if length(skip) > 0 && length(broken) > 0
+        error("invalid test macro call: cannot set both skip and broken keywords")
+    end
+
+    # Add keywords to the expression
+    ex = add_keywords!(ex, kws...)
+
+    # Get the result expression and the stringified version of the expression
+    result, str_ex = get_test_all_result(ex, __source__)
+    str_ex = "all(" * str_ex * ")"
+
+    # Return the result expression
+    result = quote
+        if $(length(skip) > 0 && esc(skip[1]))
+            record(get_testset(), Broken(:skipped, $ex))
+        else
+            let _do = $(length(broken) > 0 && esc(broken[1])) ? do_broken_test : do_test
+                _do($result, $str_ex)
+            end
+        end
+    end
+    return result
+end

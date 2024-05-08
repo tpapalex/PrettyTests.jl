@@ -1,99 +1,72 @@
 @testset "vecop.jl" begin
 
-    @testset "extract_negation(ex)" begin
-        cases = [
-            :(a),
-            :(a || b),
-            :(a && b || c),
-            :(g(x)),
-            :(x == y),
-            :(x == y == z),
-            :(x ≈ y),
-            :(a && b || c && g(x .+ y) || (x ≈ y)),
-            :(x -> x == 1)
-        ]
-
-        @testset "$ex" for ex in cases
-            ex! = Expr(:call, :!, ex)
-            @test TM.extract_negation(ex!) == (ex, true)
-
-            ex!! = Expr(:call, :!, ex!)
-            @test TM.extract_negation(ex!!) == (ex, false)
-        end
-
-        cases = [
-            :(a),
-            :(a .|| b),
-            :(a .&& b .|| c),
-            :(g.(x)),
-            :(x .== y),
-            :(z .== y .== z),
-            :(x .≈ y),
-            :(a .&& b .|| c .&& g.(x .+ y) .|| (x .≈ y))
-        ]
-
-        @testset "$ex" for ex in cases
-            ex! = Expr(:call, :.!, ex)
-            @test TM.extract_negation(ex!) == (ex, true)
-
-            ex!! = Expr(:call, :.!, ex!)
-            @test TM.extract_negation(ex!!) == (ex, false)
-        end
-    end
-
     @testset "add_keywords!(ex, kws)" begin
-        # Regular tests
-        cases = [
-            # Comparisons
-            :(a == b)      => ()               => :(a == b),
-            :(a .== b)     => ()               => :(a .== b),
-            # Functions calls
-            :(g())         => ()               => :(g()),
-            :(a ≈ b)       => (:(x = 1),)      => :(≈(a, b, x = 1)),
-            :(g(x))        => (:(y = 1),)      => :(g(x, y = 1)),
-            :(g())         => (:(x=1), :(y=y)) => :(g(x=1, y=y)),
-            # Vectorized calls
-            :(g.())        => () => :(g.()),
-            :(a .≈ b)      => (:(x = 1),)      => :(.≈(a, b, x = 1)),
-            :(g.(x))       => (:(y = 1),)      => :(g.(x, y = 1)),
-        ]
 
-        @testset "$ex" for (ex, (kws, res)) in cases
-            @test TM.add_keywords!(ex, kws) == res
+        @testset "adding cases" begin
+            # Regular tests
+            cases = [
+                # Comparisons
+                :(a == b)      => ()               => :(a == b),
+                :(a .== b)     => ()               => :(a .== b),
+                # Functions calls
+                :(g())         => ()               => :(g()),
+                :(a ≈ b)       => (:(x = 1),)      => :(≈(a, b, x = 1)),
+                :(g(x))        => (:(y = 1),)      => :(g(x, y = 1)),
+                :(g())         => (:(x=1), :(y=y)) => :(g(x=1, y=y)),
+                # Vectorized calls
+                :(g.())        => () => :(g.()),
+                :(a .≈ b)      => (:(x = 1),)      => :(.≈(a, b, x = 1)),
+                :(g.(x))       => (:(y = 1),)      => :(g.(x, y = 1)),
+                # Function calls with negation
+                :(!g())         => ()              => :(!g()),
+                :(!!g())        => (:(x = 1),)     => :(!!g(x = 1)),
+                :(!(a ≈ b))     => (:(x = 1),)     => :(!≈(a, b, x = 1)),
+                # Vectorized calls with negation
+                :(.!g.())       => ()              => :(.!g.()),
+                :(.!.!g.())     => (:(x = 1),)     => :(.!.!g.(x = 1)),
+            ]
+
+            @testset "$ex" for (ex, (kws, res)) in cases
+                @test TM.add_keywords!(ex, kws...) == res
+            end
         end
 
-        # Does not support kwargs error
-        cases = [
-            :(a),
-            :(a == b == c), 
-            :(a .== b .== c),
-            :(a && b), 
-            :(a || b),
-            :((a,b,c)),
-            :([a,b,c]),
-            :(a <: b), 
-            :(a >: b),
-        ]
+        @testset "does not support kwargs" begin
+            # Does not support kwargs error
+            cases = [
+                :(a),
+                :(a == b == c), 
+                :(a .== b .== c),
+                :(a && b), 
+                :(a || b),
+                :((a,b,c)),
+                :([a,b,c]),
+                :(a <: b), 
+                :(a >: b)
+            ]
 
-        @testset "$ex" for ex in cases
-            @test_throws "does not accept keyword arguments" TM.add_keywords!(ex, :(x=1))
+            @testset "$ex" for ex in cases
+                @test_throws "does not accept keyword arguments" TM.add_keywords!(ex, :(x=1))
+            end
         end
 
-        # invalid keyword error
-        cases = [
-            (:(a),),
-            (:(a==1),),
-            (:(g(x)),),
-            (:(a=1), :(b)),
-            (:(a=1), :(g(x)))
-        ]
+        @testset "invalid keyword syntax" begin
+            # invalid keyword error
+            cases = [
+                (:(a),),
+                (:(a==1),),
+                (:(g(x)),),
+                (:(a=1), :(b)),
+                (:(a=1), :(g(x)))
+            ]
 
-        @testset "$kws" for kws in cases
-            @test_throws "is not a valid keyword argument" TM.add_keywords!(:(a == b), kws)
+            @testset "$kws" for kws in cases
+                @test_throws "is not a valid keyword argument" TM.add_keywords!(:(a == b), kws)
+            end
         end
      end
 
-     @testset "_preprocess(ex)" begin
+     @testset "preprocess(ex)" begin
 
         cases = [
             # Converted to comparisons
@@ -140,12 +113,12 @@
         ]
 
         @testset "$ex" for (ex, res) in cases
-            @test TM._preprocess(ex) == res
+            @test TM.preprocess(ex) == res
         end
      end
 
 
-    @testset "expression classifiers: is...(ex)" begin
+    @testset "is...(ex)" begin
 
         cases = [
             # Negation
@@ -191,7 +164,7 @@
         ]
 
         @testset "is_$res($ex)" for (ex, res) in cases
-            ex = TM._preprocess(ex)
+            ex = TM.preprocess(ex)
             if res === :logical
                 @test TM.is_logical(ex)
             elseif res === :negation
@@ -219,7 +192,7 @@
             @testset "$ex" for (ex, res) in cases
                 # Pre-process and get expected results
                 res_mod_ex, res_str_ex, res_fmt_ex = res
-                ex, res_mod_ex = TM._preprocess(ex), TM._preprocess(res_mod_ex)
+                ex, res_mod_ex = TM.preprocess(ex), TM.preprocess(res_mod_ex)
                 
                 @test TM.is_negation(ex)
                 @test TM.is_negation(res_mod_ex)
@@ -269,7 +242,7 @@
                 # Pre-process and get expected results
                 res_mod_ex, res_args, res_str_ex, res_fmt_ex = res
                 res_args = esc.(res_args)
-                ex, res_mod_ex = TM._preprocess(ex), TM._preprocess(res_mod_ex)
+                ex, res_mod_ex = TM.preprocess(ex), TM.preprocess(res_mod_ex)
 
                 @test TM.is_logical(ex)
                 @test TM.is_logical(res_mod_ex)
@@ -313,7 +286,7 @@
             @testset "$ex" for (ex, res) in cases
                 # Pre-process and get expected results
                 res_mod_ex, res_fmt_ex, res_args = res
-                ex, res_mod_ex = TM._preprocess(ex), TM._preprocess(res_mod_ex)
+                ex, res_mod_ex = TM.preprocess(ex), TM.preprocess(res_mod_ex)
                 res_str_ex = string(ex)
 
                 @test TM.is_comparison(ex)
@@ -360,7 +333,7 @@
             @testset "(outer) $ex" for (ex, res) in cases_outmost
                 # Pre-process and get expected results
                 res_mod_ex, res_str_ex, res_fmt_ex, res_fmt_kw, res_args = res
-                ex, res_mod_ex = TM._preprocess(ex), TM._preprocess(res_mod_ex)
+                ex, res_mod_ex = TM.preprocess(ex), TM.preprocess(res_mod_ex)
                 res_str_ex = string(ex)
 
                 @test TM.is_argsapprox(ex)
@@ -396,7 +369,7 @@
             @testset "(inner) $ex" for (ex, res) in cases_inner
                 # Pre-process and get expected results
                 res_mod_ex, res_str_ex, res_fmt_ex, res_fmt_kw, res_args = res
-                ex, res_mod_ex = TM._preprocess(ex), TM._preprocess(res_mod_ex)
+                ex, res_mod_ex = TM.preprocess(ex), TM.preprocess(res_mod_ex)
                 res_str_ex = string(ex)
 
                 @test TM.is_argsapprox(ex)
@@ -412,7 +385,6 @@
                 @test fmt_kw == res_fmt_kw
             end   
         end
-
 
         @testset "displaycall" begin
             cases_outmost = [
@@ -442,7 +414,7 @@
             @testset "(outer) $ex" for (ex, res) in cases_outmost
                 # Pre-process and get expected results
                 res_mod_ex, res_str_ex, res_fmt_ex, res_fmt_kw, res_args = res
-                ex, res_mod_ex = TM._preprocess(ex), TM._preprocess(res_mod_ex)
+                ex, res_mod_ex = TM.preprocess(ex), TM.preprocess(res_mod_ex)
                 res_str_ex = string(ex)
 
                 @test TM.is_displaycall(ex)
@@ -485,7 +457,7 @@
             @testset "(inner) $ex" for (ex, res) in cases_inner
                 # Pre-process and get expected results
                 res_mod_ex, res_str_ex, res_fmt_ex, res_fmt_kw, res_args = res
-                ex, res_mod_ex = TM._preprocess(ex), TM._preprocess(res_mod_ex)
+                ex, res_mod_ex = TM.preprocess(ex), TM.preprocess(res_mod_ex)
                 res_str_ex = string(ex)
 
                 @test TM.is_displaycall(ex)
@@ -514,7 +486,7 @@
             ]
 
             @testset "$ex" for ex in cases
-                ex = TM._preprocess(ex)
+                ex = TM.preprocess(ex)
                 @test TM.is_fallback(ex)
 
                 args = []
@@ -528,31 +500,32 @@
         end
     end
 
-    @testset "_string_idxs()" begin
+    @testset "string_idxs()" begin
         I = CartesianIndex
-        @test TM._string_idxs([1,2,3]) == ["1", "2", "3"]
-        @test TM._string_idxs([1,10,100]) == ["  1", " 10", "100"]
-        @test TM._string_idxs([I(1,1), I(1,10), I(100,1)]) == ["  1, 1", "  1,10", "100, 1"]
+        @test TM.string_idxs([1,2,3]) == ["1", "2", "3"]
+        @test TM.string_idxs([1,10,100]) == ["  1", " 10", "100"]
+        @test TM.string_idxs([I(1,1), I(1,10), I(100,1)]) == ["  1, 1", "  1,10", "100, 1"]
     end
 
-    @testset "_string_failures()" begin
+    @testset "print_failures()" begin
         
+        printfunc = (args...) -> TM.print_failures(args...; prefix="", max_vals=4)
+
         msg = (io, idx) -> print(io, 2*idx)
         idxs = [1,2,3]
-        exp = "\n    idx=[1]: 2\n    idx=[2]: 4\n    idx=[3]: 6"
-        @test sprint(TM.print_failures, idxs, msg) == exp
+        exp = "\nidx=[1]: 2\nidx=[2]: 4\nidx=[3]: 6"
+        @test occursin(exp, sprint(printfunc, idxs, msg))
 
         msg = (io, idx) -> print(io, sum(idx.I))
         idxs = CartesianIndex.([(1,1), (1,10), (10,1)])
-        exp = "\n    idx=[ 1, 1]: 2\n    idx=[ 1,10]: 11\n    idx=[10, 1]: 11"
-        @test sprint(TM.print_failures, idxs, msg) == exp
+        exp = "\nidx=[ 1, 1]: 2\nidx=[ 1,10]: 11\nidx=[10, 1]: 11"
+        @test occursin(exp, sprint(printfunc, idxs, msg))
 
         # Wrap to 
-        printfunc = (args...) -> TM.print_failures(args...; max_vals=4)
         msg = (io, idx) -> print(io, idx)
         idxs = 1:20
-        exp = "\n    idx=[ 1]: 1\n    idx=[ 2]: 2\n    ⋮\n    idx=[19]: 19\n    idx=[20]: 20"
-        @test sprint(printfunc, idxs, msg) == exp
+        exp = "\nidx=[ 1]: 1\nidx=[ 2]: 2\n⋮\nidx=[19]: 19\nidx=[20]: 20"
+        @test occursin(exp, sprint(printfunc, idxs, msg))
     end
 
 
@@ -563,28 +536,22 @@
         end
 
         @testset "invalid broadcast behaviour" begin
-            f = (args...) -> TM.eval_test_all(args..., "", "", LineNumberNode(1))
-            @test_throws "not same size as broadcasted terms () != (2,)" f(true, [[1,2]])
-            @test_throws "not same size as broadcasted terms (2,) != (3,)" f([true, false], [[1,2,3], [1,2,3]])
-            @test_throws "not same size as broadcasted terms (2,) != (3, 3)" f([true, false], [[1,2,3], [1 2 3]])
+
         end
 
         @testset "evaled is not array or bool" begin
             f = (evaled) -> TM.eval_test_all(evaled, [evaled], "", "", LineNumberNode(1))
-            # Non-boolean non-array
-            res = f(1)   
-            @test res isa Test.Returned
-            @test res.value isa String
-            @test occursin("1 ===> Int64", destyle(res.value))
 
-            res = f(:a)   
-            @test res isa Test.Returned
-            @test res.value isa String
-            @test occursin("a ===> Symbol", destyle(res.value))
+            res = f(1)
+            @test res.value === false
+            @test occursin("1 ===> Int64", destyle(res.data))
+
+            res = f(:a)
+            @test res.value === false
+            @test occursin(":a ===> Symbol", destyle(res.value))
 
             res = f(TestStruct(:b))
-            @test res isa Test.Returned
-            @test res.value isa String
+            @test res.value === false
             @test occursin("TestStruct(:b) ===> TestStruct", destyle(res.value))
         end
 
@@ -592,24 +559,21 @@
             f = (evaled) -> TM.eval_test_all(evaled, [evaled], "", "", LineNumberNode(1))
 
             res = f([10,2])
-            @test res isa Test.Returned
-            @test res.value isa String
-            @test occursin("Vector{Int64}(2) with 2 non-Boolean values.", res.value)
-            @test occursin("idx=[1]: 10 ===> Int64", destyle(res.value))
-            @test occursin("idx=[2]: 2 ===> Int64", destyle(res.value))
+            @test res.value === false
+            @test occursin("Vector{Int64}(2) with 2 non-Boolean values.", res.data)
+            @test occursin("idx=[1]: 10 ===> Int64", destyle(res.data))
+            @test occursin("idx=[2]: 2 ===> Int64", destyle(res.data))
 
             res = f(Any[true, :a, false, TestStruct(:b)])
-            @test res isa Test.Returned
-            @test res.value isa String
-            @test occursin("Vector{Any}(4) with 2 non-Boolean values.", res.value)
-            @test occursin("idx=[2]: a ===> Symbol", destyle(res.value))
-            @test occursin("idx=[4]: TestStruct(:b) ===> TestStruct", destyle(res.value))
+            @test res.value === false
+            @test occursin("Vector{Any}(4) with 2 non-Boolean values.", res.data)
+            @test occursin("idx=[2]: :a ===> Symbol", destyle(res.data))
+            @test occursin("idx=[4]: TestStruct(:b) ===> TestStruct", destyle(res.data))
 
             res = f(Any[false true :a])
-            @test res isa Test.Returned
-            @test res.value isa String
-            @test occursin("Matrix{Any}(1×3) with 1 non-Boolean value.", res.value)
-            @test occursin("idx=[1,3]: a ===> Symbol", destyle(res.value))
+            @test res.value === false
+            @test occursin("Matrix{Any}(1×3) with 1 non-Boolean value.", res.data)
+            @test occursin("idx=[1,3]: :a ===> Symbol", destyle(res.data))
         end
 
         @testset "evaled is bool" begin
@@ -704,31 +668,6 @@
             @test occursin("idx=[2]: false && true", destyle(res.data))
         end
     end
-    # @testset "update_terms_simple" begin
-
-    #     cases = [
-    #         # Negation
-    #         :(!a)  => :negation => ([:a], "!a", "!{1:s}"),
-    #         :(.!a) => :negation => ([:a], ".!a", "!{1:s}"),
-    #         # Logical
-    #         :(a && b)  => :logical => ([:a, :b], "(a && b)",  "({1:s} && {2:s})"),
-    #         :(a .|| b) => :logical => ([:a, :b], "(a .|| b)", "({1:s} || {2:s})"),
-    #         # Comparison
-    #         :(a == b)  => :comparison => ([:a, :b], "(a == b)",  "({1:s} == {2:s})"),
-    #         :(a .≈ b)  => :comparison => ([:a, :b], "(a .≈ b)",  "({1:s} ≈ {2:s})"),
-    #         :(a <: b)  => :comparison => ([:a, :b], "(a <: b)",  "({1:s} <: {2:s})"),
-    #         :(a .∈ b)  => :comparison => ([:a, :b], "(a .∈ b)",  "({1:s} ∈ {2:s})"),
-    #     ]
-
-    #     @testset "$(ex)" for (ex, res) in cases
-    #         ex = TM._preprocess(ex)
-    #         if res === :fallback
-    #             _, str_ex, _ = TM.update_terms_fallback!([], deepcopy(ex))
-    #             @test Meta.parse(str_ex) == ex
-    #         end
-    #     end
-    # end
-     
 
     # @testset "@test_all" begin
     #     a = [1,2,3]
