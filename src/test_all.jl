@@ -533,42 +533,6 @@ function Base.showerror(io::IO, err::TypeErrorOnAllCall)
     end
 end
 
-struct MissingOnAllCall
-    msg::String
-    function MissingOnAllCall(evaled::AbstractArray) 
-        io = IOBuffer()
-        # Print type of result first
-        print(io, typeof(evaled))
-        if typeof(evaled) <: AbstractVector
-            print(io, "(", length(evaled), ")")
-        elseif typeof(evaled) <: AbstractArray
-            print(io, "(", join(size(evaled), "×"), ")")
-        end
-    
-        n_miss = sum(x -> ismissing(x), evaled)
-        n_false = sum(x -> !x, skipmissing(evaled), init=0)
-        print(io, " with ", n_false, " false and ", n_miss, " missing value", n_miss + n_false == 1 ? ":" : "s:")
-    
-        idxs = findall(x -> !isequal(x, true), evaled)
-        print_idx_message = (io, idx) -> begin
-            printstyled(IOContext(io, :color => true), " ===> ", evaled[idx], color=:light_yellow)
-        end
-        print_failures(io, idxs, print_idx_message, prefix="    ")
-    
-        return new(String(take!(io)))
-    end
-    function MissingOnAllCall(evaled)
-        return new(string(typeof(evaled)))
-    end
-end
-
-function Base.showerror(io::IO, err::MissingOnAllCall)
-    print(io, "MissingException: all() expression returned missing")
-    if err.msg != ""
-        print(io, "\n  Argument isa ", err.msg)
-    end 
-end
-
 function eval_test_all(
         @nospecialize(evaled),
         @nospecialize(terms),
@@ -576,67 +540,103 @@ function eval_test_all(
         fmt_kw, 
         source::LineNumberNode=LineNumberNode(1))
 
-    # If not an iterable of bool/missing values values, fall-back to normal all()
-    if !(eltype(evaled) <: Union{Bool, Missing})
-        res = try 
-            all(evaled)
-        catch _e
-            if isa(_e, TypeError) && _e.expected === Bool
-                throw(TypeErrorOnAllCall(evaled))
-            else
-                rethrow(_e)
-            end
+    # Try to evaluate all()
+    res = try 
+        all(evaled)
+    catch _e
+        # If TypeError because non-boolean used in boolean context, rethrow with 
+        # internal TypeErrorOnAllCall exception for nicer formatting.
+        if isa(_e, TypeError) && _e.expected === Bool
+            throw(TypeErrorOnAllCall(evaled))
+        else
+            rethrow(_e)
         end
-        if ismissing(res)
-            throw(MissingOnAllCall(evaled))
-        end
+    end
+
+    if res === true
         return Returned(res, nothing, source)
     end
-    
-    res = all(evaled)
-    if ismissing(res)
-        throw(MissingOnAllCall(evaled))
-    end
 
-    if res
-        return Returned(true, nothing, source)
-    end
-
-    # Broadcast the terms and check that the size matches the evaled expression, 
-    # otherwise throw an internal error.
-    broadcasted_terms = Base.broadcasted(tuple, terms...)
-
-    # Otherwise, find all the failing indices and print a message
-    io = IOBuffer()
-    idxs = findall(x -> !isequal(x, true), evaled)
-
-    # First print message
-    print(io, "Failed ", length(idxs), " test", length(idxs) == 1 ? "" : "s")
-    if isa(evaled, AbstractVector)
-        print(io, " from length ", length(evaled), " result.")
-    elseif isa(evaled, AbstractArray)
-        print(io, " from size ", join(size(evaled), "×"), " result.")
-    else
-        print(io, ".")
-    end
-
-    # If non-blank keyword format, print it:
-    if fmt_kw != ""
-        print(io, "\n    Keywords: ")
-        printfmt(io, fmt_kw, first(broadcasted_terms)...)
+    if !isa(res, Union{Bool, Missing})
+        error("all() did not return a boolean or missing value")
     end
 
     if !isa(fmt_ex, FormatExpr)
         fmt_ex = FormatExpr(fmt_ex)
     end
 
-    print_idx_message = (io, idx) -> begin
-        printfmt(io, fmt_ex, repr.(broadcasted_terms[idx])...)
-        if ismissing(evaled[idx])
-            printstyled(IOContext(io, :color => true), " ===> missing", color=:light_yellow)
+    # Broadcast the input terms
+    broadcasted_terms = Base.broadcasted(tuple, terms...)
+
+    io = IOBuffer()
+
+    # Print a nice message. If the evaluated result (evaled) is a false or missing, 
+    # then no need for pretty indexing.
+    if isa(evaled, Union{Bool,Missing})
+        these_terms = repr.(first(broadcasted_terms))
+        printfmt(io, fmt_ex, these_terms...)
+        if fmt_kw != ""
+            print(io, " with evaluated keywords: ")
+            printfmt(io, fmt_kw, these_terms...)
         end
+        if ismissing(evaled)
+            printstyled(IOContext(io, :color => true), " ===> missing", color=:light_yellow)
+        else
+            printstyled(IOContext(io, :color => true), " ===> false", color=:light_yellow)
+        end
+
+    else # Otherwise, use pretty-printing with indices:
+        # First, print type of inner expression 
+        io = IOBuffer()
+        print(io, "Argument isa ")
+        if isa(evaled, AbstractVector)
+            print(io, "BitVector(", length(evaled), ")")
+        elseif isa(evaled, AbstractArray)
+            print(io, "BitArray(", join(size(evaled), "×"), ")")
+        else
+            print(io, typeof(evaled))
+        end
+
+        # Then print the number of failures and missing values
+        n_false = sum(x -> !x, skipmissing(evaled), init=0)
+        n_missing = sum(x -> ismissing(x), evaled)
+        print(io, " with ")
+        if n_false > 0
+            print(io, n_false, " failure", n_false == 1 ? "" : "s")
+            if n_missing > 0
+                print(io, " and ")
+            end
+        end
+        if n_missing > 0
+            print(io, n_missing, " missing value", n_missing == 1 ? "" : "s")
+        end
+        print(io, ":")
+
+        # If non-blank keyword print, print it:
+        if fmt_kw != ""
+            print(io, "\n    Evaluated keywords: ")
+            printfmt(io, fmt_kw, repr.(first(broadcasted_terms))...)
+        end
+
+        # Try to print findall all the failiing indices and pretty-print, otherwise
+        # continue
+        
+        idxs = try 
+            findall(x -> x !== true, evaled)
+        catch _e
+            return Returned(false, String(take!(io)), source)
+        end
+
+        print_idx_message = (io, idx) -> begin
+            printfmt(io, fmt_ex, repr.(broadcasted_terms[idx])...)
+            if ismissing(evaled[idx])
+                printstyled(IOContext(io, :color => true), " ===> missing", color=:light_yellow)
+            else
+                printstyled(IOContext(io, :color => true), " ===> false", color=:light_yellow)
+            end
+        end
+        print_failures(io, idxs, print_idx_message)
     end
-    print_failures(io, idxs, print_idx_message)
 
     return Returned(false, String(take!(io)), source)
 end
@@ -647,7 +647,7 @@ function get_test_all_result(ex, source)
 
     result = quote
         try
-            let ARG = [$(escaped_args...)]
+            let ARG = Any[$(escaped_args...)]
                 eval_test_all(
                     $(mod_ex), 
                     ARG, 
