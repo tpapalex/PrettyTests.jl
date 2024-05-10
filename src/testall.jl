@@ -23,7 +23,7 @@ const DISPLAYABLE_FUNCS = (
 const COMPARISON_PREC = Base.operator_precedence(:(==)) 
 
 # Lists of operators to treat specially
-const OPS_LOGICAL = (:.&&, :.||) # TODO(tpapalex) add XOR (.⊻)
+const OPS_LOGICAL = (:.&, :.|, :.⊻, :.⊽)
 const OPS_APPROX = (:.≈, :.≉)  
 
 const isexpr = Meta.isexpr
@@ -125,8 +125,8 @@ function preprocess(ex)
         args, i = ex.head === :call ? (ex.args, 2) : (ex.args[2].args, 1)
 
         # Push any :kw expressions in :parameters as trailing keywords
-        parex = args[i]
-        if isexpr(parex, :parameters)
+        if length(args) != 0 && isexpr(args[i], :parameters)
+            parex = args[i]
             new_args = args[i+1:end]
             new_parex_args = []
             for a in parex.args
@@ -162,7 +162,7 @@ end
 isvecnegationexpr(ex) = isexpr(ex, :call, 2) && ex.args[1] === :.!
 
 # Vectorized AND or OR expressions, e.g, a .&& b, a .|| c
-isveclogicalexpr(ex) = isexpr(ex, OPS_LOGICAL, 2)
+isveclogicalexpr(ex) = isexpr(ex, :call) && ex.args[1] ∈ OPS_LOGICAL
 
 # Most comparison expressions, e.g. a == b, a <= b <= c, a ≈ B. Note that :call
 # expressions with comparison ops are chanegd to :comparison in preprocess()
@@ -189,14 +189,7 @@ end
 # Anonymous function (x -> )
 isanonfuncexpr(ex) = isexpr(ex, :->)
 
-
 #################### Escaping arguments ###################
-# Internal functions used to get a list of escaped sub-expressions that
-# should be broadcasted (so that failures can be printed), and replace them
-# with references an `ARG` vector
-
-# Don't specialize for the remaining functions
-@nospecialize
 
 """
     recurse_escape!(args, ex; isoutmost=false)
@@ -225,199 +218,287 @@ for pretty printing failures.
 - a `FormatExpr`-like string, for pretty-printing the keyword arguments used in `ex` (only
   if `isoutmost` and `ex` is a displayable `:call` or `:.`)
 """
-function recurse_escape!(args, ex; isoutmost=false)
+function recurse_escape!(ex, args::Vector{Expr}; outmost::Bool=true)
     ex = preprocess(ex)
     if isvecnegationexpr(ex)
-        return recurse_escape_negation!(args, ex; isoutmost=isoutmost)
-
+        return recurse_escape_negation!(ex, args, outmost=outmost)
     elseif isveclogicalexpr(ex)
-        return recurse_escape_logical!(args, ex; isoutmost=isoutmost)
-
+        return recurse_escape_logical!(ex, args, outmost=outmost)
     elseif isveccomparisonexpr(ex)
-        return recurse_escape_comparison!(args, ex; isoutmost=isoutmost)
-
+        return recurse_escape_comparison!(ex, args, outmost=outmost)
     elseif isvecapproxexpr(ex)
-        return recurse_escape_approx!(args, ex; isoutmost=isoutmost)
-
+        return recurse_escape_approx!(ex, args, outmost=outmost)
     elseif isvecdisplayexpr(ex)
-        return recurse_escape_displayfunc!(args, ex; isoutmost=isoutmost)
-
+        return recurse_escape_displayfunc!(ex, args, outmost=outmost)
     else
-        return recurse_escape_fallback!(args, ex; isoutmost=isoutmost)
+        return recurse_escape_basecase!(ex, args, outmost=outmost)
     end
 end
 
-function recurse_escape_negation!(args, ex; isoutmost=false)
-    # Recursively update the second argument
-    ex.args[2], str_arg, fmt_arg, _ = recurse_escape!(args, ex.args[2]) 
+struct Formatter
+    io::IOBuffer
+    parens::Bool
+    Formatter(parens::Bool=true) = new(IOBuffer(), parens)
+end
 
-    # Create the format strings
-    str_ex = string(ex.args[1]) * str_arg
-    fmt_ex = string_unvec(ex.args[1]) * fmt_arg
-    fmt_kw = ""
+function stringify!(fmt::Formatter)
+    str = String(take!(fmt.io))
+    if fmt.parens 
+        return "($str)"
+    else
+        return str
+    end
+end
+
+function Base.print(fmt::Formatter, i::Integer)
+    print(fmt.io, "{$i:s}")
+end
+
+function Base.print(fmt::Formatter, strs::AbstractString...)
+    print(fmt.io, strs...)
+end
+
+function Base.print(fmt::Formatter, innerfmt::Formatter)
+    print(fmt.io, stringify!(innerfmt))
+    close(innerfmt.io)
+end
+
+function Base.print(fmt::Formatter, s)
+    print(fmt.io, string(s))
+end
+
+function recurse_escape_basecase!(ex, args::Vector{Expr}; outmost::Bool=true)
+    # Escape entire expression to args
+    push!(args, esc(ex))
+
+    # Override parentheses if expression doesn't need them
+    addparens = !outmost
+    if !isa(ex, Expr) || 
+        ex.head ∈ (:vect, :tuple, :hcat, :vcat) || 
+        (isexpr(ex, (:call, :.)) && Base.operator_precedence(ex.args[1]) == 0)
+
+        addparens = false
+    end
+
+    # Create a simple format string
+    fmt = Formatter(addparens)
+    print(fmt, length(args))
+
+    # Replace the expression with ARG[i]
+    ex = :(ARG[$(length(args))])
+    return ex, fmt, Formatter(false)
+end
+
+function recurse_escape_keyword!(ex::Expr, args::Vector{Expr})
+    # Keyword argument values are pushed to escaped `args`, but should be
+    # wrapped in a Ref() call to avoid broadcasting.
+    push!(args, esc(Expr(:call, :Ref, ex.args[2])))
+
+    fmt = Formatter(false)
+    print(fmt, ex.args[1])
+    print(fmt, " = ")
+    print(fmt, length(args))
+
+    # Replace keyword argument with ARG[i].x to un-Ref() in evaluation
+    ex.args[2] = :(ARG[$(length(args))].x)
+    
+    return ex, fmt
+end
+
+function recurse_escape_negation!(ex::Expr, args::Vector{Expr}; outmost::Bool=true)
+    # Recursively update the second argument
+    ex.args[2], fmt_arg, _ = recurse_escape!(ex.args[2], args)
+
+    # Never requires parentheses outside the negation
+    fmt = Formatter(false)
+    print(fmt, "!")
+    print(fmt, fmt_arg)
+
+    # Escape negation operator
+    ex.args[1] = esc(ex.args[1])
+
+    return ex, fmt, Formatter(false)
+end
+
+function recurse_escape_logical!(ex::Expr, args::Vector{Expr}; outmost::Bool=true)
+
+    fmt = Formatter(!outmost)
+    for i in 2:length(ex.args)
+        # Recursively update the two arguments. If a sub-expression is also logical, 
+        # there is no need to parenthesize so consider it `outmost=true`.
+        ex.args[i], fmt_arg, _ = recurse_escape!(
+            ex.args[i], args, outmost=isveclogicalexpr(ex.args[i]))
+
+        # Unless it's the first argument, print the operator
+        i == 2 || print(fmt, " ", string_unvec(ex.args[1]), " ")
+        print(fmt, fmt_arg)
+    end
 
     # Escape the operator
     ex.args[1] = esc(ex.args[1])
 
-    return ex, str_ex, fmt_ex, fmt_kw
+    return ex, fmt, Formatter(false)
 end
 
-function recurse_escape_logical!(args, ex; isoutmost=false)
-    # Recursively update the two arguments. If a sub-expression is also logical
-    # it doesn't need to be parenthesized, so consider it "outmost".
-    ex.args[1], str_arg1, fmt_arg1, _ = recurse_escape!(args, ex.args[1], 
-        isoutmost=isveclogicalexpr(ex.args[1]))
-    ex.args[2], str_arg2, fmt_arg2, _ = recurse_escape!(args, ex.args[2], 
-        isoutmost=isveclogicalexpr(ex.args[2]))
-
-    str_ex = str_arg1 * " " * string(ex.head) * " " * str_arg2
-    fmt_ex = fmt_arg1 * " " * string_unvec(ex.head) * " " *  fmt_arg2
-    fmt_kw = ""
-
-    # Parenthesize unless outmost
-    if !isoutmost
-        str_ex = "(" * str_ex * ")"
-        fmt_ex = "(" * fmt_ex * ")"
-    end
-
-    return ex, str_ex, fmt_ex, fmt_kw
-end
-
-function recurse_escape_comparison!(args, ex; isoutmost=false)
+function recurse_escape_comparison!(ex::Expr, args::Vector{Expr}; outmost::Bool=false)
+    fmt = Formatter(!outmost)
     # Recursively update every other argument (i.e. the terms), and 
     # escape the operators.
-    str_ex, fmt_ex, fmt_kw = "", "", ""
-    for i in 1:length(ex.args)
+    for i in eachindex(ex.args)
         if i % 2 == 1 # Term
-            ex.args[i], str_arg, fmt_arg, _ = recurse_escape!(args, ex.args[i])
-            str_ex *= str_arg
-            fmt_ex *= fmt_arg
+            ex.args[i], fmt_arg, _ = recurse_escape!(ex.args[i], args)
+            print(fmt, fmt_arg)
         else # Operator
-            str_ex *= " " * string(ex.args[i]) * " "
-            fmt_ex *= " " * string_unvec(ex.args[i]) * " "
+            print(fmt, " ", string_unvec(ex.args[i]), " ")
             ex.args[i] = esc(ex.args[i])
         end
     end
     
-    # Parenthesize unless outmost
-    if !isoutmost
-        str_ex = "(" * str_ex * ")"
-        fmt_ex = "(" * fmt_ex * ")"
-    end
-    
-    return ex, str_ex, fmt_ex, fmt_kw
+    return ex, fmt, Formatter(false)
 end
 
-function recurse_escape_keyword!(args, ex)
-    # Keyword argument values are pushed to escaped `args`, but should be
-    # wrapped in a Ref() call to avoid broadcasting
-    push!(args, esc(Expr(:call, :Ref, ex.args[2])))
-
-    str_kw = "$(ex.args[1]) = $(ex.args[2])"
-    fmt_kw = "$(ex.args[1]) = {$(length(args)):s}"
-
-    # Replace keyword argument with ARG[i].x to un-Ref() in evaluation
-    ex.args[2] = :(ARG[$(length(args))].x)
-
-    return ex, str_kw, fmt_kw
-end
-
-
-function recurse_escape_approx!(args, ex; isoutmost=false)
+function recurse_escape_approx!(ex::Expr, args::Vector{Expr}; outmost::Bool=false)
     # Recursively update both positional arguments
-    ex.args[2], str_arg1, fmt_arg1, _ = recurse_escape!(args, ex.args[2])
-    ex.args[3], str_arg2, fmt_arg2, _ = recurse_escape!(args, ex.args[3])
+    ex.args[2], fmt_arg1, _ = recurse_escape!(ex.args[2], args)
+    ex.args[3], fmt_arg2, _ = recurse_escape!(ex.args[3], args)
 
-    # Iterate through keyword arguments
-    str_kws, fmt_kws = "", ""
+    # Recursively update with keyword arguments
+    fmt_kws = Formatter(false)
     for i in 4:length(ex.args)
-        ex.args[i], str_kw, fmt_kw = recurse_escape_keyword!(args, ex_args[i])
-        str_kws *= str_kw * ", "
-        fmt_kws *= fmt_kw * ", "
+        ex.args[i], fmt_kw_i = recurse_escape_keyword!(ex.args[i], args)
+        print(fmt_kws, fmt_kw_i)
+        i == length(ex.args) || print(fmt_kws, ", ")
     end
 
-    # Format strings:
-    str_ex = "$(ex.args[1])($str_arg1, $str_arg2, $(chopsuffix(str_kw, ", ")))"
-    if isoutmost 
-        fmt_ex = "$fmt_arg1 $(string_unvec(ex.args[1])) $fmt_arg2"
-        fmt_kw = chopsuffix(fmt_kw, ", ")
+    fmt_ex = Formatter(false)
+    if outmost
+        print(fmt_ex, fmt_arg1)
+        print(fmt_ex, " ", string_unvec(ex.args[1]), " ")
+        print(fmt_ex, fmt_arg2)
     else
-        fmt_ex = "$(string_unvec(ex.args[1]))($fmt_arg1, $fmt_arg2, $(chopsuffix(fmt_kw, ", ")))"
-        fmt_kw = ""
+        print(fmt_ex, string_unvec(ex.args[1]))
+        print(fmt_ex, "(")
+        print(fmt_ex, fmt_arg1)
+        print(fmt_ex, ", ")
+        print(fmt_ex, fmt_arg2)
+        print(fmt_ex, ", ")
+        print(fmt_ex, fmt_kws)
+        print(fmt_ex, ")")
+        fmt_kws = Formatter(false)
     end
 
-    # Escape function name
+    # Escape function
     ex.args[1] = esc(ex.args[1])
 
-    return ex, str_ex, fmt_ex, fmt_kw
+    return ex, fmt_ex, fmt_kws
 end
 
-function recurse_escape_displayfunc!(args, ex; isoutmost=false)
+function recurse_escape_displayfunc!(ex::Expr, args::Vector{Expr}; outmost::Bool=false)
     ex_args = ex.args[2].args
 
-    str_args, fmt_args = "", ""
-    str_kws, fmt_kws = "", ""
+    fmt_ex = Formatter(false)
+    print(fmt_ex, string(ex.args[1]), ".(")
+    fmt_kws = Formatter(false)
+
+    n_args, n_kws = 0, 0
     for i in eachindex(ex_args)
         if !isexpr(ex_args[i], :kw)
             # Recursively update each positional argument
-            ex_args[i], str_arg, fmt_arg, _ = recurse_escape!(args, ex_args[i])
-            str_args *= str_arg * ", "
-            fmt_args *= fmt_arg * ", "
+            n_args += 1
+            ex_args[i], fmt_arg, _ = recurse_escape!(ex_args[i], args)
+            print(fmt_ex, fmt_arg)
+            i == length(ex_args) || isexpr(ex_args[i+1], :kw) || print(fmt_ex, ", ")
         else
             # Treat keywords specially
-            ex_args[i], str_kw, fmt_kw = recurse_escape_keyword!(args, ex_args[i])
-            str_kws *= str_kw * ", "
-            fmt_kws *= fmt_kw * ", "
+            n_kws += 1
+            ex_args[i], fmt_kw_i = recurse_escape_keyword!(ex_args[i], args)
+            print(fmt_kws, fmt_kw_i)
+            i == length(ex_args) || print(fmt_kws, ", ")
         end
     end
 
-    # Finalize string formatting
-    str_args = chopsuffix(str_args, ", ")
-    fmt_args = chopsuffix(fmt_args, ", ")
-    str_kws = chopsuffix(str_kws, ", ")
-    fmt_kws = chopsuffix(fmt_kws, ", ")
-    
-    str_ex = "$(ex.args[1]).($(str_args)\
-              $(length(str_kws) == 0 ? "" : ", ")$(str_kws))"
-
-    if isoutmost
-        fmt_ex = "$(ex.args[1])($fmt_args)"
+    if outmost
+        print(fmt_ex, ")")
     else
-        fmt_ex = "$(ex.args[1])($(fmt_args)\
-                  $(length(fmt_kws) == 0 ? "" : ", ")$(fmt_kws))"
-        fmt_kws = ""
+        n_args == 0 || n_kws == 0 || print(fmt_ex, ", ")
+        print(fmt_ex, fmt_kws)
+        print(fmt_ex, ")")
+        fmt_kws = Formatter(false)
     end
 
     # Escape the function name
     ex.args[1] = esc(ex.args[1])
-    return ex, str_ex, fmt_ex, fmt_kws
+
+    return ex, fmt_ex, fmt_kws
 end
 
-function recurse_escape_fallback!(args, ex; isoutmost::Bool=false)
-    # Recursion base case, escape etntire expression
-    push!(args, esc(ex))
 
-    # Determine if parentheses are needed around the expression
-    parens = if isoutmost
-        false
-    elseif !isa(ex, Expr)
-        false
-    elseif ex.head === :vect || ex.head === :tuple || ex.head === :hcat || ex.head === :vcat
-        false
-    elseif (ex.head === :call || ex.head === :.) && Base.operator_precedence(ex.args[1]) == 0
-        false
-    else
-        true
-    end
-    str_ex = parens ?  "(" * string(ex) * ")" : string(ex)
-    fmt_ex = "{$(length(args)):s}"
-    fmt_kw = ""
+# function recurse_escape_displayfunc!(args, ex; isoutmost=false)
+#     ex_args = ex.args[2].args
+
+#     str_args, fmt_args = "", ""
+#     str_kws, fmt_kws = "", ""
+#     for i in eachindex(ex_args)
+#         if !isexpr(ex_args[i], :kw)
+#             # Recursively update each positional argument
+#             ex_args[i], str_arg, fmt_arg, _ = recurse_escape!(args, ex_args[i])
+#             str_args *= str_arg * ", "
+#             fmt_args *= fmt_arg * ", "
+#         else
+#             # Treat keywords specially
+#             ex_args[i], str_kw, fmt_kw = recurse_escape_keyword!(args, ex_args[i])
+#             str_kws *= str_kw * ", "
+#             fmt_kws *= fmt_kw * ", "
+#         end
+#     end
+
+#     # Finalize string formatting
+#     str_args = chopsuffix(str_args, ", ")
+#     fmt_args = chopsuffix(fmt_args, ", ")
+#     str_kws = chopsuffix(str_kws, ", ")
+#     fmt_kws = chopsuffix(fmt_kws, ", ")
     
-    # Replace the expression term should now be ARG[i]
-    ex = :(ARG[$(length(args))])
+#     str_ex = "$(ex.args[1]).($(str_args)\
+#               $(length(str_kws) == 0 ? "" : ", ")$(str_kws))"
 
-    return ex, str_ex, fmt_ex, fmt_kw
-end
+#     if isoutmost
+#         fmt_ex = "$(ex.args[1])($fmt_args)"
+#     else
+#         fmt_ex = "$(ex.args[1])($(fmt_args)\
+#                   $(length(fmt_kws) == 0 ? "" : ", ")$(fmt_kws))"
+#         fmt_kws = ""
+#     end
+
+#     # Escape the function name
+#     ex.args[1] = esc(ex.args[1])
+#     return ex, str_ex, fmt_ex, fmt_kws
+# end
+
+# function recurse_escape_fallback!(args, ex; isoutmost::Bool=false)
+#     # Recursion base case, escape etntire expression
+#     push!(args, esc(ex))
+
+#     # Determine if parentheses are needed around the expression
+#     parens = if isoutmost
+#         false
+#     elseif !isa(ex, Expr)
+#         false
+#     elseif ex.head === :vect || ex.head === :tuple || ex.head === :hcat || ex.head === :vcat
+#         false
+#     elseif (ex.head === :call || ex.head === :.) && Base.operator_precedence(ex.args[1]) == 0
+#         false
+#     else
+#         true
+#     end
+#     str_ex = parens ?  "(" * string(ex) * ")" : string(ex)
+#     fmt_ex = "{$(length(args)):s}"
+#     fmt_kw = ""
+    
+#     # Replace the expression term should now be ARG[i]
+#     ex = :(ARG[$(length(args))])
+
+#     return ex, str_ex, fmt_ex, fmt_kw
+# end
 
 #################### Pretty Printing ###################
 # Internal function to stringify vectors of indices, but justified.

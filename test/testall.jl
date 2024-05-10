@@ -180,14 +180,16 @@
         @testset "isveclogicalexpr(ex)" begin
             cases = [
                 # True
-                :(a .&& b) => true,
-                :(a .|| b) => true,
-                :(a .&& b .|| c) => true,
-                :(a .&& (g.(x) .&& c)) => true,
+                :(a .& b) => true,
+                :(a .| b) => true,
+                :(a .⊽ b) => true,
+                :(a .⊻ b) => true,
+                :(a .& b .| c) => true,
+                :(a .⊽ g.(x) .⊻ c) => true,
                 # False
-                :(a && b) => false,
+                :(a & b) => false,
                 :(a || b) => false,
-                :(a == b) => false,
+                :(a ⊻ b) => false,
                 :(a .== b) => false,
             ]
 
@@ -267,190 +269,12 @@
 
 
     @testset "recurse_escape!()" begin 
-    
-        @testset "keywords" begin
-            kw = Expr(:kw, :a, 1)
-            @testset "kw: $(kw.args[1]) = $(kw.args[2])" begin
-                args = []
-                res_kw, res_str, res_fmt = TM.recurse_escape_keyword!(args, deepcopy(kw))
 
-                @test args == [esc(:(Ref(1)))]
-                @test res_kw == Expr(:kw, :a, :(ARG[1].x))
-                @test res_str == "a = 1"
-                @test res_fmt == "a = {1:s}"
-            end
+        escape! = (ex, args; kws...) -> TM.recurse_escape!(deepcopy(ex), args; kws...)
+        stringify! = fmt_io -> TM.stringify!(fmt_io)
+        @testset "basecase" begin
 
-            kw = Expr(:kw, :atol, :(1+TOL))
-            @testset "kw: $(kw.args[1]) = $(kw.args[2])" begin
-                args = []
-                res_kw, res_str, res_fmt = TM.recurse_escape_keyword!(args, deepcopy(kw))
-
-                @test args == [esc(:(Ref(1 + TOL)))]
-                @test res_kw == Expr(:kw, :atol, :(ARG[1].x))
-                @test res_str == "atol = 1 + TOL"
-                @test res_fmt == "atol = {1:s}"
-            end
-        end
-
-        @testset "negation" begin
-            ex = :(.!a)
-            @testset "ex: $ex" begin
-                ex, args = TM.preprocess(ex), []
-                res_ex, res_str, res_fmt, _ = TM.recurse_escape!(args, deepcopy(ex))
-
-                @test args == [esc(:a)]
-                @test res_ex == Expr(:call, esc(:.!), :(ARG[1]))
-                @test res_str == ".!a"
-                @test res_fmt == "!{1:s}"
-            end
-        end
-
-        @testset "logical" begin
-            ex = :(a .&& b)
-            @testset "ex: $ex" begin
-                ex, args = TM.preprocess(ex), []
-                res_ex, res_str, res_fmt, _ = TM.recurse_escape!(args, deepcopy(ex))
-                @test args    == esc.([:a, :b])
-                @test res_ex  == :(ARG[1] .&& ARG[2])
-                @test res_str == "(a .&& b)"
-                @test res_fmt == "({1:s} && {2:s})"
-            end
-
-            ex = :(a .|| b .|| c)
-            @testset "ex: $ex" begin
-                ex, args = TM.preprocess(ex), []
-                res_ex, res_str, res_fmt, _ = TM.recurse_escape!(args, deepcopy(ex))
-
-                @test args == esc.([:a, :b, :c])
-                @test res_ex == :(ARG[1] .|| ARG[2] .|| ARG[3])
-                @test res_str == "(a .|| b .|| c)"
-                @test res_fmt == "({1:s} || {2:s} || {3:s})"
-            end
-
-            ex = :(a .&& b .&& c .|| d)
-            @testset "ex: $ex" begin
-                ex, args = TM.preprocess(ex), []
-                res_ex, res_str, res_fmt, _ = TM.recurse_escape!(args, deepcopy(ex))
-
-                @test args == esc.([:a, :b, :c, :d])
-                @test res_ex == :(ARG[1] .&& ARG[2] .&& ARG[3] .|| ARG[4])
-                @test res_str == "(a .&& b .&& c .|| d)"
-                @test res_fmt == "({1:s} && {2:s} && {3:s} || {4:s})"
-            end
-        end
-
-        @testset "comparison" begin
-
-            ex = :(a .== b)
-            @testset "ex: $ex" begin
-                ex, args = TM.preprocess(ex), []
-                res_ex, res_str, res_fmt, _ = TM.recurse_escape!(args, deepcopy(ex))
-
-                @test args == esc.([:a, :b])
-                @test res_ex == Expr(:comparison, :(ARG[1]), esc(:.==), :(ARG[2]))
-                @test res_str == "(a .== b)"
-                @test res_fmt == "({1:s} == {2:s})"
-            end
-
-            ex = :(a .≈ b .> c)
-            @testset "ex: $ex" begin
-                ex, args = TM.preprocess(ex), []
-                res_ex, res_str, res_fmt, _ = TM.recurse_escape!(args, deepcopy(ex), isoutmost=true)
-
-                @test args == esc.([:a, :b, :c])
-                @test res_ex == Expr(:comparison, :(ARG[1]), esc(:.≈), :(ARG[2]), esc(:.>), :(ARG[3]))
-                @test res_str == "a .≈ b .> c"
-                @test res_fmt == "{1:s} ≈ {2:s} > {3:s}"
-            end
-
-            ex = :(a .<: b .>: c)
-            @testset "ex: $ex" begin
-                ex, args = TM.preprocess(ex), []
-                res_ex, res_str, res_fmt, _ = TM.recurse_escape!(args, deepcopy(ex))
-
-                @test args == esc.([:a, :b, :c])
-                @test res_ex == Expr(:comparison, :(ARG[1]), esc(:.<:), :(ARG[2]), esc(:.>:), :(ARG[3]))
-                @test res_str == "(a .<: b .>: c)"
-                @test res_fmt == "({1:s} <: {2:s} >: {3:s})"
-            end
-        end
-
-        @testset "(n)approx with args" begin
-            ex = :(.≈(a, b, atol=TOL))
-            @testset "ex: $ex" begin
-                ex, args = TM.preprocess(ex), []
-                res_ex, res_str, res_fmt, res_fmt_kw = TM.recurse_escape!(args, deepcopy(ex), isoutmost=true)
-
-                @test args == esc.([:a, :b, :(Ref(TOL))])
-                @test res_ex == Expr(:call, esc(:.≈), 
-                                     :(ARG[1]), :(ARG[2]), 
-                                     Expr(:kw, :atol, :(ARG[3].x)))
-                @test res_str == ".≈(a, b, atol = TOL)"
-                @test res_fmt == "{1:s} ≈ {2:s}"
-                @test res_fmt_kw == "atol = {3:s}"
-            end
-
-            ex = :(.≉(a, b, rtol=100*1e-8, atol=TOL))
-            @testset "ex: $ex" begin
-                ex, args = TM.preprocess(ex), []
-                res_ex, res_str, res_fmt, res_fmt_kw = TM.recurse_escape!(args, deepcopy(ex), isoutmost=false)
-
-                @test args == esc.([:a, :b, :(Ref(100*1e-8)), :(Ref(TOL))])
-                @test res_ex == Expr(:call, esc(:.≉), 
-                                     :(ARG[1]), :(ARG[2]), 
-                                     Expr(:kw, :rtol, :(ARG[3].x)), 
-                                     Expr(:kw, :atol, :(ARG[4].x)))
-                @test res_str == ".≉(a, b, rtol = 100 * 1.0e-8, atol = TOL)"
-                @test res_fmt == "≉({1:s}, {2:s}, rtol = {3:s}, atol = {4:s})"
-                @test res_fmt_kw == ""
-            end
-        end
-
-        @testset "displayable function" begin
-            ex = :(isnan.(a))
-            @testset "ex: $ex" begin
-                ex, args = TM.preprocess(ex), []
-                res_ex, res_str, res_fmt, res_fmt_kw = TM.recurse_escape!(args, deepcopy(ex))
-
-                @test args == esc.([:a])
-                @test res_ex == Expr(:., esc(:isnan), Expr(:tuple, :(ARG[1])))
-                @test res_str == "isnan.(a)"
-                @test res_fmt == "isnan({1:s})"
-                @test res_fmt_kw == ""
-            end
-
-            ex = :(isapprox.(a, b, atol=1))
-            @testset "ex: $ex" begin
-                ex, args = TM.preprocess(ex), []
-                res_ex, res_str, res_fmt, res_fmt_kw = TM.recurse_escape!(args, deepcopy(ex))
-
-                @test args == esc.([:a, :b, :(Ref(1))])
-                @test res_ex == Expr(:., esc(:isapprox), Expr(:tuple, 
-                                     :(ARG[1]), :(ARG[2]), 
-                                     Expr(:kw, :atol, :(ARG[3].x))))
-                @test res_str == "isapprox.(a, b, atol = 1)"
-                @test res_fmt == "isapprox({1:s}, {2:s}, atol = {3:s})"
-                @test res_fmt_kw == ""
-            end
-
-            ex = :(isapprox.(a, b, atol=TOL, rtol=1e-8))
-            @testset "ex: $ex" begin
-                ex, args = TM.preprocess(ex), []
-                res_ex, res_str, res_fmt, res_fmt_kw = TM.recurse_escape!(args, deepcopy(ex), isoutmost=true)
-
-                @test args == esc.([:a, :b, :(Ref(TOL)), :(Ref(1e-8))])
-                @test res_ex == Expr(:., esc(:isapprox), Expr(:tuple, 
-                                     :(ARG[1]), :(ARG[2]), 
-                                     Expr(:kw, :atol, :(ARG[3].x)), 
-                                     Expr(:kw, :rtol, :(ARG[4].x))))
-                @test res_str == "isapprox.(a, b, atol = TOL, rtol = 1.0e-8)"
-                @test res_fmt == "isapprox({1:s}, {2:s})"
-                @test res_fmt_kw == "atol = {3:s}, rtol = {4:s}"
-            end
-        end
-
-
-        @testset "fallback" begin
+            # No parentheses needed
             cases = [
                 :(1),
                 :(a), 
@@ -458,36 +282,335 @@
                 :([1,2]), 
                 :(g(x)), 
                 :(g.(x,a=1;b=b)), 
-                :(a .+ b),
+            ]
+
+            @testset "ex: $ex" for ex in cases
+                args = Expr[]
+                res, fmt, _  = escape!(ex, args; outmost=true)
+                
+                @test args == Expr[esc(ex)]
+                @test res == :(ARG[1])
+                @test stringify!(fmt) == "{1:s}"
+
+                res, fmt, _  = escape!(ex, args; outmost=false)
+                @test args == Expr[esc(ex), esc(ex)]
+                @test res == :(ARG[2])
+                @test stringify!(fmt) == "{2:s}"
+            end
+
+            # Parentheses needed
+            cases = [
+                :(a + b), 
+                :(a .- b),
+                :(a...), 
+                :(a .&& b)
             ]
             @testset "ex: $ex" for ex in cases
-                ex, args = TM.preprocess(ex), []
-                res_ex, res_str, res_fmt, _ = TM.recurse_escape!(args, deepcopy(ex), isoutmost=true)
+                args = Expr[]
+                res, fmt, _  = escape!(ex, args; outmost=true)
                 
-                @test args    == [esc(ex)]
-                @test res_ex  == :(ARG[1])
-                @test res_str == string(ex)
-                @test res_fmt == "{1:s}"
+                @test args == Expr[esc(ex)]
+                @test res == :(ARG[1])
+                @test stringify!(fmt) == "{1:s}"
+
+                res, fmt, _  = escape!(ex, args; outmost=false)
+                @test args == Expr[esc(ex), esc(ex)]
+                @test res == :(ARG[2])
+                @test stringify!(fmt) == "({2:s})"
             end
         end
 
-        @testset "complicated expressions" begin
-            ex = :(a .&& f.(b) .&& .!isnan.(x) .&& isapprox.(y, z, atol=1))
+        @testset "keywords" begin
+            kw = Expr(:kw, :a, 1)
+            @testset "kw: $(kw.args[1]) = $(kw.args[2])" begin
+                args = Expr[]
+                res, fmt = TM.recurse_escape_keyword!(deepcopy(kw), args)
+
+                @test args == [esc(:(Ref(1)))]
+                @test res == Expr(:kw, :a, :(ARG[1].x))
+                @test stringify!(fmt) == "a = {1:s}"
+
+                res, fmt = TM.recurse_escape_keyword!(deepcopy(kw), args)
+
+                @test args == [esc(:(Ref(1))), esc(:(Ref(1)))]
+                @test res == Expr(:kw, :a, :(ARG[2].x))
+                @test stringify!(fmt) == "a = {2:s}"
+            end
+
+            kw = Expr(:kw, :atol, :(1+TOL))
+            @testset "kw: $(kw.args[1]) = $(kw.args[2])" begin
+                args = Expr[]
+                res, fmt = TM.recurse_escape_keyword!(deepcopy(kw), args)
+
+                @test args == [esc(:(Ref(1+TOL)))]
+                @test res == Expr(:kw, :atol, :(ARG[1].x))
+                @test stringify!(fmt) == "atol = {1:s}"
+
+                res, fmt = TM.recurse_escape_keyword!(deepcopy(kw), args)
+
+                @test args == [esc(:(Ref(1+TOL))), esc(:(Ref(1+TOL)))]
+                @test res == Expr(:kw, :atol, :(ARG[2].x))
+                @test stringify!(fmt) == "atol = {2:s}"
+            end
+        end
+
+        @testset "negation" begin
+            ex = :(.!a)
             @testset "ex: $ex" begin
-                ex, args = TM.preprocess(ex), []
-                res_ex, res_str, res_fmt, _ = TM.recurse_escape!(args, deepcopy(ex), isoutmost=true)
+                args = Expr[]
+                res, fmt, _  = escape!(ex, args; outmost=true)
+                
+                @test args == Expr[esc(:a)]
+                @test res == Expr(:call, esc(:.!), :(ARG[1]))
+                @test stringify!(fmt) == "!{1:s}"
 
-                @test args == esc.([:a, :(f.(b)), :x, :y, :z, :(Ref(1))])
-                res_ex1 = :(ARG[1])
-                res_ex2 = :(ARG[2])
-                res_ex3 = Expr(:call, esc(:.!), Expr(:., esc(:isnan), Expr(:tuple, :(ARG[3]))))
-                res_ex4 = Expr(:., esc(:isapprox), Expr(:tuple, :(ARG[4]), :(ARG[5]), Expr(:kw, :atol, :(ARG[6].x))))
-                res_ex = :($(res_ex1) .&& $(res_ex2) .&& $(res_ex3) .&& $(res_ex4))
-                @test res_ex == res_ex
-                @test res_str == "a .&& f.(b) .&& .!isnan.(x) .&& isapprox.(y, z, atol = 1)"
-                @test res_fmt == "{1:s} && {2:s} && !isnan({3:s}) && isapprox({4:s}, {5:s}, atol = {6:s})"
+                res, fmt, _  = escape!(ex, args; outmost=false)
+                @test args == Expr[esc(:a), esc(:a)]
+                @test res == Expr(:call, esc(:.!), :(ARG[2]))
+                @test stringify!(fmt) == "!{2:s}"
             end
         end
+
+        @testset "logical" begin
+            ex = :(a .& b)
+            @testset "ex: $ex" begin
+                args = Expr[]
+                res, fmt, _  = escape!(ex, args; outmost=true)
+                
+                @test args == esc.([:a, :b])
+                @test res == Expr(:call, esc(:.&), :(ARG[1]), :(ARG[2]))
+                @test stringify!(fmt) == "{1:s} & {2:s}"
+
+                res, fmt, _  = escape!(ex, args; outmost=false)
+                @test args == Expr[esc(:a), esc(:b), esc(:a), esc(:b)]
+                @test res == Expr(:call, esc(:.&), :(ARG[3]), :(ARG[4]))
+                @test stringify!(fmt) == "({3:s} & {4:s})"
+            end
+
+            ex = :(a .| b .| c)
+            @testset "ex: $ex" begin
+                args = Expr[]
+
+                res, fmt, _  = escape!(ex, args; outmost=true)
+                @test args == esc.([:a, :b, :c])
+                inner_res = Expr(:call, esc(:.|), :(ARG[1]), :(ARG[2]))
+                @test res == Expr(:call, esc(:.|), inner_res, :(ARG[3]))
+                @test stringify!(fmt) == "{1:s} | {2:s} | {3:s}"
+
+                res, fmt, _  = escape!(ex, args; outmost=false)
+                @test args == esc.([:a, :b, :c, :a, :b, :c])
+                inner_res = Expr(:call, esc(:.|), :(ARG[4]), :(ARG[5]))
+                @test res == Expr(:call, esc(:.|), inner_res, :(ARG[6]))
+                @test stringify!(fmt) == "({4:s} | {5:s} | {6:s})"
+            end
+
+            ex = :(a .& b .⊻ c .⊽ d .| e)
+            @testset "ex: $ex" begin
+                args = Expr[]
+
+                res, fmt, _  = escape!(ex, args; outmost=true)
+                @test args == esc.([:a, :b, :c, :d, :e])
+                inner_res = Expr(:call, esc(:.&), :(ARG[1]), :(ARG[2]))
+                inner_res = Expr(:call, esc(:.⊻), inner_res, :(ARG[3]))
+                inner_res = Expr(:call, esc(:.⊽), inner_res, :(ARG[4]))
+                @test res == Expr(:call, esc(:.|), inner_res, :(ARG[5]))
+                @test stringify!(fmt) == "{1:s} & {2:s} ⊻ {3:s} ⊽ {4:s} | {5:s}"
+            end
+
+            ex = :(.⊽(a, b, c))
+            @testset "ex: $ex" begin
+                args = Expr[]
+
+                res, fmt, _  = escape!(ex, args; outmost=true)
+                @test args == esc.([:a, :b, :c])
+                @test res == Expr(:call, esc(:.⊽), :(ARG[1]), :(ARG[2]), :(ARG[3]))
+                @test stringify!(fmt) == "{1:s} ⊽ {2:s} ⊽ {3:s}"
+            end
+        end
+
+        @testset "comparison" begin
+            ex = :(a .== b)
+            @testset "ex: $ex" begin
+                args = Expr[]
+
+                res, fmt, _ = escape!(ex, args; outmost=true)
+                @test args == esc.([:a, :b])
+                @test res == Expr(:comparison, :(ARG[1]), esc(:.==), :(ARG[2]))
+                @test stringify!(fmt) == "{1:s} == {2:s}"
+
+                res, fmt, _ = escape!(ex, args; outmost=false)
+                @test args == esc.([:a, :b, :a, :b])
+                @test res == Expr(:comparison, :(ARG[3]), esc(:.==), :(ARG[4]))
+                @test stringify!(fmt) == "({3:s} == {4:s})"
+            end
+
+            ex = :(a .≈ b .> c)
+            @testset "ex: $ex" begin
+                args = Expr[]
+
+                res, fmt, _ = escape!(ex, args; outmost=false)
+                @test args == esc.([:a, :b, :c])
+                @test res == Expr(:comparison, :(ARG[1]), esc(:.≈), :(ARG[2]), esc(:.>), :(ARG[3]))
+                @test stringify!(fmt) == "({1:s} ≈ {2:s} > {3:s})"
+            end
+
+            ex = :(a .<: b .>: c)
+            @testset "ex: $ex" begin
+                args = Expr[]
+
+                res, fmt, _ = escape!(ex, args; outmost=true)
+                @test args == esc.([:a, :b, :c])
+                @test res == Expr(:comparison, :(ARG[1]), esc(:.<:), :(ARG[2]), esc(:.>:), :(ARG[3]))
+                @test stringify!(fmt) == "{1:s} <: {2:s} >: {3:s}"
+            end
+        end
+
+        @testset "approx" begin
+            ex = :(.≈(a, b, atol=10*TOL))
+            @testset "ex: $ex" begin
+                args = Expr[]
+
+                res, fmt_ex, fmt_kw = escape!(ex, args; outmost=true)
+                @test args == esc.([:a, :b, :(Ref(10*TOL))])
+                @test res == Expr(:call, esc(:.≈), 
+                                  :(ARG[1]), :(ARG[2]), 
+                                  Expr(:kw, :atol, :(ARG[3].x)))
+                @test stringify!(fmt_ex) == "{1:s} ≈ {2:s}"
+                @test stringify!(fmt_kw) == "atol = {3:s}"
+
+                res, fmt_ex, fmt_kw = escape!(ex, args; outmost=false)
+                @test args == esc.([:a, :b, :(Ref(10*TOL)), :a, :b, :(Ref(10*TOL))])
+                @test res == Expr(:call, esc(:.≈), 
+                                  :(ARG[4]), :(ARG[5]), 
+                                  Expr(:kw, :atol, :(ARG[6].x)))
+                @test stringify!(fmt_ex) == "≈({4:s}, {5:s}, atol = {6:s})"
+                @test stringify!(fmt_kw) == ""
+            end
+
+            ex = :(.≉(a, b, rtol=1, atol=1))
+            @testset "ex: $ex" begin
+                args = Expr[]
+
+                res, fmt_ex, fmt_kw = escape!(ex, args; outmost=true)
+                @test args == esc.([:a, :b, :(Ref(1)), :(Ref(1))])
+                @test res == Expr(:call, esc(:.≉), 
+                                  :(ARG[1]), :(ARG[2]), 
+                                  Expr(:kw, :rtol, :(ARG[3].x)), 
+                                  Expr(:kw, :atol, :(ARG[4].x)))
+                @test stringify!(fmt_ex) == "{1:s} ≉ {2:s}"
+                @test stringify!(fmt_kw) == "rtol = {3:s}, atol = {4:s}"
+
+                res, fmt_ex, fmt_kw = escape!(ex, args; outmost=false)
+                @test args == esc.([:a, :b, :(Ref(1)), :(Ref(1)), :a, :b, :(Ref(1)), :(Ref(1))])
+                @test res == Expr(:call, esc(:.≉), 
+                                  :(ARG[5]), :(ARG[6]), 
+                                  Expr(:kw, :rtol, :(ARG[7].x)), 
+                                  Expr(:kw, :atol, :(ARG[8].x)))
+                @test stringify!(fmt_ex) == "≉({5:s}, {6:s}, rtol = {7:s}, atol = {8:s})"
+                @test stringify!(fmt_kw) == ""
+            end
+        end
+
+        @testset "displayable function" begin
+            ex = :(isnan.(a))
+
+            @testset "ex: $ex" begin
+                args = Expr[]
+
+                res, fmt_ex, fmt_kw = escape!(ex, args; outmost=true)
+                @test args == esc.([:a])
+                @test res == Expr(:., esc(:isnan), Expr(:tuple, :(ARG[1])))
+                @test stringify!(fmt_ex) == "isnan.({1:s})"
+                @test stringify!(fmt_kw) == ""
+
+                res, fmt_ex, fmt_kw = escape!(ex, args; outmost=true)
+                @test args == esc.([:a, :a])
+                @test res == Expr(:., esc(:isnan), Expr(:tuple, :(ARG[2])))
+                @test stringify!(fmt_ex) == "isnan.({2:s})"
+                @test stringify!(fmt_kw) == ""
+            end
+
+            ex = :(isnan.(a = 1))
+            @testset "ex: $ex" begin
+                args = Expr[]
+
+                res, fmt_ex, fmt_kw = escape!(ex, args; outmost=true)
+                @test args == esc.([:(Ref(1))])
+                @test res == Expr(:., esc(:isnan), Expr(:tuple, Expr(:kw, :a, :(ARG[1].x))))
+                @test stringify!(fmt_ex) == "isnan.()"
+                @test stringify!(fmt_kw) == "a = {1:s}"
+
+                res, fmt_ex, fmt_kw = escape!(ex, args; outmost=false)
+                @test args == esc.([:(Ref(1)), :(Ref(1))])
+                @test res == Expr(:., esc(:isnan), Expr(:tuple, Expr(:kw, :a, :(ARG[2].x))))
+                @test stringify!(fmt_ex) == "isnan.(a = {2:s})"
+                @test stringify!(fmt_kw) == ""
+            end
+
+            ex = :(isnan.())
+            @testset "ex: $ex" begin
+                args = Expr[]
+
+                res, fmt_ex, fmt_kw = escape!(ex, args; outmost=true)
+                @test args == esc.([])
+                @test res == Expr(:., esc(:isnan), Expr(:tuple))
+                @test stringify!(fmt_ex) == "isnan.()"
+                @test stringify!(fmt_kw) == ""
+
+                res, fmt_ex, fmt_kw = escape!(ex, args; outmost=false)
+                @test args == esc.([])
+                @test res == Expr(:., esc(:isnan), Expr(:tuple))
+                @test stringify!(fmt_ex) == "isnan.()"
+                @test stringify!(fmt_kw) == ""
+            end
+
+            ex = :(isapprox.(a, b, atol=1))
+            @testset "ex: $ex" begin
+                args = Expr[]
+
+                res, fmt_ex, fmt_kw = escape!(ex, args; outmost=true)
+                @test args == esc.([:a, :b, :(Ref(1))])
+                @test res == Expr(:., esc(:isapprox), Expr(:tuple, :(ARG[1]), :(ARG[2]), Expr(:kw, :atol, :(ARG[3].x))))
+                @test stringify!(fmt_ex) == "isapprox.({1:s}, {2:s})"
+                @test stringify!(fmt_kw) == "atol = {3:s}"
+
+                res, fmt_ex, fmt_kw = escape!(ex, args; outmost=false)
+                @test args == esc.([:a, :b, :(Ref(1)), :a, :b, :(Ref(1))])
+                @test res == Expr(:., esc(:isapprox), Expr(:tuple, :(ARG[4]), :(ARG[5]), Expr(:kw, :atol, :(ARG[6].x))))
+                @test stringify!(fmt_ex) == "isapprox.({4:s}, {5:s}, atol = {6:s})"
+                @test stringify!(fmt_kw) == ""
+            end
+
+            ex = :(isapprox.(a, b, atol=1, rtol=1))
+            @testset "ex: $ex" begin
+                args = Expr[]
+
+                res, fmt_ex, fmt_kw = escape!(ex, args; outmost=true)
+                @test args == esc.([:a, :b, :(Ref(1)), :(Ref(1))])
+                @test res == Expr(:., esc(:isapprox), Expr(:tuple, :(ARG[1]), :(ARG[2]), Expr(:kw, :atol, :(ARG[3].x)), Expr(:kw, :rtol, :(ARG[4].x))))
+                @test stringify!(fmt_ex) == "isapprox.({1:s}, {2:s})"
+                @test stringify!(fmt_kw) == "atol = {3:s}, rtol = {4:s}"
+            end
+
+        end
+
+        # @testset "complicated expressions" begin
+        #     ex = :(a .&& f.(b) .&& .!isnan.(x) .&& isapprox.(y, z, atol=1))
+        #     @testset "ex: $ex" begin
+        #         ex, args = TM.preprocess(ex), []
+        #         res_ex, res_str, res_fmt, _ = TM.recurse_escape!(args, deepcopy(ex), isoutmost=true)
+
+        #         @test args == esc.([:a, :(f.(b)), :x, :y, :z, :(Ref(1))])
+        #         res_ex1 = :(ARG[1])
+        #         res_ex2 = :(ARG[2])
+        #         res_ex3 = Expr(:call, esc(:.!), Expr(:., esc(:isnan), Expr(:tuple, :(ARG[3]))))
+        #         res_ex4 = Expr(:., esc(:isapprox), Expr(:tuple, :(ARG[4]), :(ARG[5]), Expr(:kw, :atol, :(ARG[6].x))))
+        #         res_ex = :($(res_ex1) .&& $(res_ex2) .&& $(res_ex3) .&& $(res_ex4))
+        #         @test res_ex == res_ex
+        #         @test res_str == "a .&& f.(b) .&& .!isnan.(x) .&& isapprox.(y, z, atol = 1)"
+        #         @test res_fmt == "{1:s} && {2:s} && !isnan({3:s}) && isapprox({4:s}, {5:s}, atol = {6:s})"
+        #     end
+        # end
     end
 
     @testset "printing utilities" begin
