@@ -6,10 +6,10 @@ module TestMacroExtensions
     import Test: do_test, do_broken_test
 
     export @test_setop
-    export @test_all
+    export @testall
 
     include("utilities.jl")
     include("test_setop.jl")
-    include("test_all.jl")
+    include("testall.jl")
 
 end
