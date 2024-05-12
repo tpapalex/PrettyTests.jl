@@ -7,5 +7,5 @@ const TM = TestMacroExtensions
     include("nothrowtestset.jl")
     # include("utilities.jl")
     # include("test_setop.jl")
-    include("testall.jl")
+    include("test_all.jl")
 end
