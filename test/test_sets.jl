@@ -100,7 +100,7 @@
         end
     end
 
-    @testset "eval_test_all" begin
+    @testset "eval_test_sets()" begin
 
         @testset "op: ==" begin
             f = (lhs, rhs) -> TM.eval_test_sets(lhs, :(==), rhs, LineNumberNode(1))
@@ -310,7 +310,7 @@
             let fails = @testset NoThrowTestSet begin
                     # 1
                     @test_sets [1,2,3] == [1,2,3,4]
-                    push!(messages, :([1,2,3] == [1,2,3,4]) => [
+                    push!(messages, [
                         "Expression: [1, 2, 3] == [1, 2, 3, 4]",
                         "Evaluated: L and R are not equal.",
                     ])
@@ -318,7 +318,7 @@
                     # 2
                     a, b = 1, 1
                     @test_sets a ≠ b
-                    push!(messages, :(a ≠ b) => [
+                    push!(messages, [
                         "Expression: a ≠ b",
                         "Evaluated: L and R are equal.",
                     ])
@@ -326,14 +326,14 @@
                     # 3
                     a = [3,2,1,3,2,1]
                     @test_sets a ⊆ 2:3
-                    push!(messages, :(a ⊆ 2:3) => [
+                    push!(messages, [
                         "Expression: a ⊆ 2:3",    
                         "Evaluated: L is not a subset of R.",
                     ])
 
                     # 4
                     @test_sets 2:4 ⊇ 1:5
-                    push!(messages, :(2:4 ⊇ 1:5) => [
+                    push!(messages, [
                         "Expression: 2:4 ⊇ 1:5",
                         "Evaluated: L is not a superset of R.",
                     ])
@@ -341,14 +341,14 @@
                     # 5
                     b = 1:3
                     @test_sets [1,2,3] ⊊ b
-                    push!(messages, :([1,2,3] ⊊ b) => [
+                    push!(messages, [
                         "Expression: [1, 2, 3] ⊊ b",
                         "Evaluated: L and R are equal; L is not a proper subset.",
                     ])
 
                     # 6
                     @test_sets 1:4 ⊊ 1:3
-                    push!(messages, :(1:4 ⊊ 1:3) => [
+                    push!(messages, [
                         "Expression: 1:4 ⊊ 1:3",
                         "Evaluated: L is not a proper subset of R.",
                     ])
@@ -356,21 +356,21 @@
                     # 7
                     SET = Set([5,5,5,6])
                     @test_sets SET ⊋ [6,5]
-                    push!(messages, :(Set([5,5,5,6])) => [
+                    push!(messages, [
                         "Expression: SET ⊋ [6, 5]",
                         "Evaluated: L and R are equal; L is not a proper superset.",
                     ])
 
                     # 8
                     @test_sets (1,1,1,2) ⊋ (3,2)
-                    push!(messages, :((1,1,1,2) ⊋ (3,2)) => [
+                    push!(messages, [
                         "Expression: (1, 1, 1, 2) ⊋ (3, 2)",
                         "Evaluated: L is not a proper superset of R.",
                     ])
 
                     # 9
                     @test_sets [1,1,1,2] ∩ [3,2] 
-                    push!(messages, :([1,1,1,2] ∩ [3,2] ) => [
+                    push!(messages, [
                         "Expression: [1, 1, 1, 2] ∩ [3, 2] == ∅",
                         "Evaluated: L and R are not disjoint.",
                     ])
@@ -378,14 +378,14 @@
                     # 10
                     a = [1,2,3]
                     @test_sets a != [1,2,3]
-                    push!(messages, :(a != [1,2,3]) => [
+                    push!(messages, [
                         "Expression: a ≠ [1, 2, 3]",
                         "Evaluated: L and R are equal.",
                     ])
 
                     # 11
                     @test_sets 4 ⊂ Set(1:3)
-                    push!(messages, :(4 ⊂ Set(1:3)) => [
+                    push!(messages, [
                         "Expression: 4 ⊆ Set(1:3)",
                         "Evaluated: L is not a subset of R.",
                     ])
@@ -393,14 +393,14 @@
                     # 12
                     a = Set(1:3)
                     @test_sets a ⊃ 4
-                    push!(messages, :(a ⊃ 4) => [
+                    push!(messages, [
                         "Expression: a ⊇ 4",
                         "Evaluated: L is not a superset of R.",
                     ])
 
                     # 13
                     @test_sets 1:3 || 2:4
-                    push!(messages, :(1:3 || 2:4) => [
+                    push!(messages, [
                         "Expression: 1:3 ∩ 2:4 == ∅",
                         "Evaluated: L and R are not disjoint.",
                     ])
@@ -408,32 +408,32 @@
                     # 14
                     a = [1]
                     @test_sets issetequal(a, 2)
-                    push!(messages, :(issetequal(a, 2)) => [
+                    push!(messages, [
                         "Expression: a == 2",
                         "Evaluated: L and R are not equal.",
                     ])
 
                     # 15
                     @test_sets isdisjoint(1, 1)
-                    push!(messages, :(isdisjoint(1, 1)) => [
+                    push!(messages, [
                         "Expression: 1 ∩ 1 == ∅",
                         "Evaluated: L and R are not disjoint.",
                     ])
 
                     # 16
                     @test_sets issubset(1:5, 3)
-                    push!(messages, :(issubset(1:5, 3)) => [
+                    push!(messages, [
                         "Expression: 1:5 ⊆ 3",
                         "Evaluated: L is not a subset of R.",
                     ])
 
-                end # teststet
+                end
 
-                @testset "ex[$i]: $(messages[i][1])" for (i, fail) in enumerate(fails)
+                @testset "ex[$i]: $(fail.orig_expr)" for (i, fail) in enumerate(fails)
                     @test fail isa Test.Fail
                     @test fail.test_type === :test
                     str = destyle(sprint(show, fail))
-                    for msg in messages[i][2]
+                    for msg in messages[i]
                         @test contains(str, msg)
                     end
                 end
@@ -450,12 +450,15 @@
 
         @testset "skip=true" begin
             let skips = @testset NoThrowTestSet begin
+                    # 1
                     @test_sets 1 == 1 skip=true
+                    # 2
                     @test_sets 1 == 2 skip=true
+                    # 3
                     @test_sets 1 == error("fail gracefully") skip=true
-                end # testset
+                end
 
-                @testset "Skipped[$i]" for (i, skip) in enumerate(skips)
+                @testset "skipped[$i]" for (i, skip) in enumerate(skips)
                     @test skip isa Test.Broken
                     @test skip.test_type === :skipped
                 end
@@ -464,48 +467,51 @@
 
         @testset "broken=true" begin
             let brokens = @testset NoThrowTestSet begin
+                    # 1
                     @test_sets 1 == 2 broken=true
+                    # 2
                     @test_sets 1 == error("fail gracefully") broken=true
                 end
 
-                @testset "Broken[$i]" for (i, broken) in enumerate(brokens)
+                @testset "broken[$i]" for (i, broken) in enumerate(brokens)
                     @test broken isa Test.Broken
                     @test broken.test_type === :test
                 end
-            end
+            end # let brokens
 
             let unbrokens = @testset NoThrowTestSet begin
+                    # 1
                     @test_sets 1 == 1 broken=true
                 end
 
-                @testset "Unbroken[$i]" for (i, unbroken) in enumerate(unbrokens)
+                @testset "unbroken[$i]" for (i, unbroken) in enumerate(unbrokens)
                     @test unbroken isa Test.Error
                     @test unbroken.test_type === :test_unbroken
                 end
-            end
+            end # let unbrokens
         end
 
         @testset "Error" begin
             messages = []
             let errors = @testset NoThrowTestSet begin
+                    # 1
                     @test_sets A == B
-                    push!(messages, :(A == B) => "UndefVarError: `A` not defined")
-
+                    push!(messages, "UndefVarError: `A` not defined")
+                    # 2
                     @test_sets sqrt(-1) == 3
-                    push!(messages, :(sqrt(-1) == 3) => "DomainError with -1.0")
-
+                    push!(messages, "DomainError with -1.0")
+                    # 3
                     @test_sets 3 == error("fail ungracefully")
-                    push!(messages, :(3 == error()) => "fail ungracefully")
+                    push!(messages, "fail ungracefully")
                 end
 
-                @testset "ex[$i]: $(messages[i][1])" for (i, error) in enumerate(errors)
+                @testset "error[$i]" for (i, error) in enumerate(errors)
                     @test error isa Test.Error
                     @test error.test_type === :test_error
-                    @test contains(sprint(show, error), messages[i][2])
+                    @test contains(sprint(show, error), messages[i])
                 end
             end
         end
-
 
         @testset "evaluate arguments once" begin
             g = Int[]

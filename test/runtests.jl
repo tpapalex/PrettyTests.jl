@@ -8,5 +8,5 @@ const TM = TestMacroExtensions
 
     # include("utilities.jl")
     include("test_sets.jl")
-    # include("test_all.jl")
+    include("test_all.jl")
 end
