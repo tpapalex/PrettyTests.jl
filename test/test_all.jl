@@ -765,6 +765,8 @@
 
         @test_all true
         @test_all fill(true, 5)
+        @test_all Dict()
+        @test_all Set([true])
         @test_all a .=== a
         @test_all a .== 1:3
         @test_all a .<= b
@@ -778,8 +780,181 @@
         @test_all a .≉ b atol=1e-8
         @test_all Bool[1,0,1] .| Bool[1,1,0]
         @test_all Bool[1,0,0] .⊻ Bool[0,1,0] .⊻ Bool[0,0,1]
+    end
 
+    @testset "@test_all should only evaluate arguments once" begin
+        g = Int[]
+        f = (x) -> (push!(g, 1); x)
+        @test_all f([1,2]) .== 1:2
+        @test g == [1]
+
+        empty!(g)
+        @test_all occursin.(r"a|b", f(["aa", "bb", "ab"]))
+        @test g == [1]
+    end
+
+    @testset "@test_all fails" begin
+
+        destyle = x -> replace(x, r"\e\[\d+m" => "")
+
+        let fails = @testset NoThrowTestSet begin
+                # 1: 1:3 .== 2:4
+                @test_all 1:3 .== 2:4
+
+                # 2: [1 2] .== [1, 2]
+                @test_all [1 2] .== [1, 2]
+
+                # 3: Bool[1,0] .⊻ Bool[1,1]
+                a, b = Bool[1,0], Bool[1,1]
+                @test_all a .⊻ b
+
+                # 4: 1:4 .∈ Ref(1:3)
+                @test_all 1:4 .∈ Ref(1:3)
+
+                # 5: Set([false])
+                a = Set([false])
+                @test_all a
+
+                # 6: [1,2,missing] .== 1
+                a = [1,2,missing]
+                @test_all a .== 1
+
+                # 7: 1 .== 2
+                @test_all 1 .== 2
+
+                # 8: isnan.([1,NaN,3])
+                a = [1,NaN,3]
+                @test_all .!isnan.(a)
+
+                # 9: [0.9, 1.0, 1.1] .≈ 1 atol=1e-2
+                a = [0.9, 1.0, 1.1]
+                @test_all a .≈ 1 atol=1e-2
+
+                # 10: false
+                @test_all false
+
+                # 11: [[1,2], 1, 1:2] .== 1:2
+                a = [[1,2], 1, 1:2]
+                @test_all a .== Ref(1:2)
+            end # testset
+
+            for (i, fail) in enumerate(fails)
+                @testset "isa Fail (i = $i)" begin
+                    @test fail isa Test.Fail
+                    @test fail.test_type === :test
+                end
+            end
+
+            let str = destyle(sprint(show, fails[1]))
+                @test contains(str, "Expression: all(1:3 .== 2:4)")
+                @test contains(str, "Evaluated: false")
+                @test contains(str, "Argument: 3-element BitVector, 3 failures:")
+                @test contains(str, "[1]: 1 == 2 ===> false")
+                @test contains(str, "[2]: 2 == 3 ===> false")
+                @test contains(str, "[3]: 3 == 4 ===> false")
+            end
+
+            let str = destyle(sprint(show, fails[2]))
+                @test contains(str, "Expression: all([1 2] .== [1, 2])")
+                @test contains(str, "Evaluated: false")
+                @test contains(str, "Argument: 2×2 BitMatrix, 2 failures:")
+                @test contains(str, "[2,1]: 1 == 2 ===> false")
+                @test contains(str, "[1,2]: 2 == 1 ===> false")
+            end
+
+            let str = destyle(sprint(show, fails[3]))
+                @test contains(str, "Expression: all(a .⊻ b)")
+                @test contains(str, "Evaluated: false")
+                @test contains(str, "Argument: 2-element BitVector, 1 failure:")
+                @test contains(str, "[1]: true ⊻ true ===> false")
+            end
+
+            let str = destyle(sprint(show, fails[4]))
+                @test contains(str, "Expression: all(1:4 .∈ Ref(1:3))")
+                @test contains(str, "Evaluated: false")
+                @test contains(str, "Argument: 4-element BitVector, 1 failure:")
+                @test contains(str, "[4]: 4 ∈ 1:3 ===> false")
+            end
+
+            let str = destyle(sprint(show, fails[5]))
+                @test contains(str, "Expression: all(a)")
+                @test contains(str, "Evaluated: false")
+                @test contains(str, "Argument: Set{Bool} with 1 element, 1 failure")
+            end
+
+            let str = destyle(sprint(show, fails[6]))
+                @test contains(str, "Expression: all(a .== 1)")
+                @test contains(str, "Evaluated: false")
+                @test contains(str, "Argument: 3-element Vector{Union{Missing, Bool}}, 1 missing and 1 failure:")
+                @test contains(str, "[2]: 2 == 1 ===> false")
+                @test contains(str, "[3]: missing == 1 ===> missing")
+            end
+
+            let str = destyle(sprint(show, fails[7]))
+                @test contains(str, "Expression: all(1 .== 2)")
+                @test contains(str, "Evaluated: false")
+                @test contains(str, "Argument: 1 == 2 ===> false")
+            end
+
+            let str = destyle(sprint(show, fails[8]))
+                @test contains(str, "Expression: all(.!(isnan.(a)))")
+                @test contains(str, "Evaluated: false")
+                @test contains(str, "Argument: 3-element BitVector, 1 failure:")
+                @test contains(str, "[2]: !isnan(NaN) ===> false")
+            end
+
+            let str = destyle(sprint(show, fails[9]))
+                @test contains(str, "Expression: all(.≈(a, 1, atol = 0.01))")
+                @test contains(str, "Evaluated: false")
+                @test contains(str, "Argument: 3-element BitVector, 2 failures:")
+                @test contains(str, "[1]: 0.9 ≈ 1 (atol=0.01) ===> false")
+                @test contains(str, "[3]: 1.1 ≈ 1 (atol=0.01) ===> false")
+            end
+
+            let str = destyle(sprint(show, fails[10]))
+                @test contains(str, "Expression: all(false)")
+                @test contains(str, "Evaluated: false")
+                @test contains(str, "Argument: false ===> false")
+            end
+
+            let str = destyle(sprint(show, fails[11]))
+                @test contains(str, "Expression: all(a .== Ref(1:2))")
+                @test contains(str, "Evaluated: false")
+                @test contains(str, "Argument: 3-element BitVector, 1 failure:")
+                @test contains(str, "[2]: 1 == 1:2 ===> false")
+            end
+        end # let fails
 
     end
 
+    @testset "@test_all with skip/broken=false kwargs" begin
+        a = 1
+        @test_all 1 .== 1 broken=false
+        @test_all 1 .== 1 skip=false
+        @test_all 1 .== 1 broken=a==2
+        @test_all 1 .== 1 skip=!isone(1)
+    end
+
+    @testset "@test_all with skip=true" begin
+        let skips = @testset NoThrowTestSet begin
+                @test_all 1 .== 1 skip=true
+                @test_all 1 .== 2 skip=true
+            end # testset
+
+        @test skips[1] isa Test.Broken && skips[1].test_type === :skipped
+        @test skips[2] isa Test.Broken && skips[2].test_type === :skipped
+        end # let skips
+    end
+
+    @testset "@test_all with broken=true" begin
+        let brokens = @testset NoThrowTestSet begin
+                @test_all 1 .== 2 broken=true
+                @test_all 1 .== 1 broken=true
+            end
+
+            @test brokens[1] isa Test.Broken && brokens[1].test_type === :test
+            @test brokens[2] isa Test.Error && brokens[2].test_type === :test_unbroken
+        end
+    end
+    
 end

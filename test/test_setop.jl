@@ -424,8 +424,8 @@
 
     @testset "@test_setop with broken=true" begin
         let brokens = @testset NoThrowTestSet begin
-                @test 1 == 2 broken=true
-                @test 1 == 1 broken=true
+                @test_setop 1 == 2 broken=true
+                @test_setop 1 == 1 broken=true
             end
 
             @test brokens[1] isa Test.Broken && brokens[1].test_type === :test
