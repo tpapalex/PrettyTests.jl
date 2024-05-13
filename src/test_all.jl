@@ -26,8 +26,6 @@ const COMPARISON_PREC = Base.operator_precedence(:(==))
 const OPS_LOGICAL = (:.&, :.|, :.⊻, :.⊽)
 const OPS_APPROX = (:.≈, :.≉)  
 
-const isexpr = Meta.isexpr
-
 # A reference value for the max number of failures to print in a @testall failure.
 const MAX_PRINT_FAILURES = Ref{Int64}(10)
 
@@ -114,7 +112,7 @@ function pushkeywords!(ex, kws...)
 end
 
 # An internal function, recursively called on the @testall expression to normalize it.
-function preprocess(ex)
+function preprocess_test_all(ex)
 
     # Normalize dot comparison operator calls to :comparison expressions. 
     # Do not if there are extra arguments or there are splats.
@@ -184,7 +182,7 @@ isvecnegationexpr(ex) = isexpr(ex, :call, 2) && ex.args[1] === :.!
 isveclogicalexpr(ex) = isexpr(ex, :call) && ex.args[1] ∈ OPS_LOGICAL
 
 # Most comparison expressions, e.g. a == b, a <= b <= c, a ≈ B. Note that :call
-# expressions with comparison ops are chanegd to :comparison in preprocess()
+# expressions with comparison ops are chanegd to :comparison in preprocess_test_all()
 function isveccomparisonexpr(ex)
     return isexpr(ex, :comparison) && 
         all(i -> isvecoperator(ex.args[i]), 2:2:length(ex.args))
@@ -351,36 +349,34 @@ end
 @nospecialize
 
 #################### Escaping arguments ###################
-# Internal functions that process expressions `ex` for use in `get_testall_result`. It 
-# recursively modifies subexpressions that will be broadcast for pretty-printing 
-# by (i) escaping them and pushing them to `args`, and (ii) replacing them with
+# Internal functions to process an expression `ex` for use in `@test_all`. It 
+# recursively modifies subexpressions that will be broadcast for pretty-printing by
+# by (i) escaping them and pushing them to `escargs`, and (ii) replacing them with
 # references to `ARG[i]` in the `ex` itself. It does the same with keyword arguments
 # but wraps them in `Ref()` before escaping. It also recursively produces a 
 # `Formatter` object for pretty-printing the broadcasted arguments.
-function recurse_escape!(ex, args::Vector{Expr}; outmost::Bool=true)
+function recurse_process!(ex, escargs::Vector{Expr}; outmost::Bool=true)
+    ex = preprocess_test_all(ex)
     if isexpr(ex, :kw)
-        return recurse_escape_keyword!(ex, args, outmost=outmost)
-    end
-    
-    ex = preprocess(ex)
-    if isvecnegationexpr(ex)
-        return recurse_escape_negation!(ex, args, outmost=outmost)
+        return recurse_process_keyword!(ex, escargs, outmost=outmost)
+    elseif isvecnegationexpr(ex)
+        return recurse_process_negation!(ex, escargs, outmost=outmost)
     elseif isveclogicalexpr(ex)
-        return recurse_escape_logical!(ex, args, outmost=outmost)
+        return recurse_process_logical!(ex, escargs, outmost=outmost)
     elseif isveccomparisonexpr(ex)
-        return recurse_escape_comparison!(ex, args, outmost=outmost)
+        return recurse_process_comparison!(ex, escargs, outmost=outmost)
     elseif isvecapproxexpr(ex)
-        return recurse_escape_approx!(ex, args, outmost=outmost)
+        return recurse_process_approx!(ex, escargs, outmost=outmost)
     elseif isvecdisplayexpr(ex)
-        return recurse_escape_displayfunc!(ex, args, outmost=outmost)
+        return recurse_process_displayfunc!(ex, escargs, outmost=outmost)
     else
-        return recurse_escape_basecase!(ex, args, outmost=outmost)
+        return recurse_process_basecase!(ex, escargs, outmost=outmost)
     end
 end
 
-function recurse_escape_basecase!(ex, args::Vector{Expr}; outmost::Bool=true)
+function recurse_process_basecase!(ex, escargs::Vector{Expr}; outmost::Bool=true)
     # Escape entire expression to args
-    push!(args, esc(ex))
+    push!(escargs, esc(ex))
 
     # Override parentheses if expression doesn't need them
     addparens = !outmost
@@ -393,32 +389,32 @@ function recurse_escape_basecase!(ex, args::Vector{Expr}; outmost::Bool=true)
 
     # Create a simple format string
     fmt = Formatter(addparens)
-    print(fmt, length(args))
+    print(fmt, length(escargs))
 
     # Replace the expression with ARG[i]
-    ex = :(ARG[$(length(args))])
+    ex = :(ARG[$(length(escargs))])
     return ex, fmt
 end
 
-function recurse_escape_keyword!(ex::Expr, args::Vector{Expr}; outmost::Bool=true)
+function recurse_process_keyword!(ex::Expr, escargs::Vector{Expr}; outmost::Bool=true)
     # Keyword argument values are pushed to escaped `args`, but should be
     # wrapped in a Ref() call to avoid broadcasting.
-    push!(args, esc(Expr(:call, :Ref, ex.args[2])))
+    push!(escargs, esc(Expr(:call, :Ref, ex.args[2])))
 
     fmt = Formatter(false)
     print(fmt, ex.args[1])
     print(fmt, "=")
-    print(fmt, length(args))
+    print(fmt, length(escargs))
 
     # Replace keyword argument with ARG[i].x to un-Ref() in evaluation
-    ex.args[2] = :(ARG[$(length(args))].x)
+    ex.args[2] = :(ARG[$(length(escargs))].x)
     
     return ex, fmt
 end
 
-function recurse_escape_negation!(ex::Expr, args::Vector{Expr}; outmost::Bool=true)
+function recurse_process_negation!(ex::Expr, escargs::Vector{Expr}; outmost::Bool=true)
     # Recursively update the second argument
-    ex.args[2], fmt_arg = recurse_escape!(ex.args[2], args)
+    ex.args[2], fmt_arg = recurse_process!(ex.args[2], escargs)
 
     # Never requires parentheses outside the negation
     fmt = Formatter(false)
@@ -431,13 +427,13 @@ function recurse_escape_negation!(ex::Expr, args::Vector{Expr}; outmost::Bool=tr
     return ex, fmt
 end
 
-function recurse_escape_logical!(ex::Expr, args::Vector{Expr}; outmost::Bool=true)
+function recurse_process_logical!(ex::Expr, escargs::Vector{Expr}; outmost::Bool=true)
     fmt = Formatter(!outmost)
     for i in 2:length(ex.args)
         # Recursively update the two arguments. If a sub-expression is also logical, 
         # there is no need to parenthesize so consider it `outmost=true`.
-        ex.args[i], fmt_arg = recurse_escape!(
-            ex.args[i], args, outmost=isveclogicalexpr(ex.args[i]))
+        ex.args[i], fmt_arg = recurse_process!(
+            ex.args[i], escargs, outmost=isveclogicalexpr(ex.args[i]))
 
         # Unless it's the first argument, print the operator
         i == 2 || print(fmt, " ", string_unvec(ex.args[1]), " ")
@@ -450,13 +446,13 @@ function recurse_escape_logical!(ex::Expr, args::Vector{Expr}; outmost::Bool=tru
     return ex, fmt
 end
 
-function recurse_escape_comparison!(ex::Expr, args::Vector{Expr}; outmost::Bool=false)
+function recurse_process_comparison!(ex::Expr, escargs::Vector{Expr}; outmost::Bool=false)
     fmt = Formatter(!outmost)
     # Recursively update every other argument (i.e. the terms), and 
     # escape the operators.
     for i in eachindex(ex.args)
         if i % 2 == 1 # Term
-            ex.args[i], fmt_arg = recurse_escape!(ex.args[i], args)
+            ex.args[i], fmt_arg = recurse_process!(ex.args[i], escargs)
             print(fmt, fmt_arg)
         else # Operator
             print(fmt, " ", string_unvec(ex.args[i]), " ")
@@ -467,10 +463,10 @@ function recurse_escape_comparison!(ex::Expr, args::Vector{Expr}; outmost::Bool=
     return ex, fmt
 end
 
-function recurse_escape_approx!(ex::Expr, args::Vector{Expr}; outmost::Bool=false)
+function recurse_process_approx!(ex::Expr, escargs::Vector{Expr}; outmost::Bool=false)
     # Recursively update both positional arguments
-    ex.args[2], fmt_arg1 = recurse_escape!(ex.args[2], args)
-    ex.args[3], fmt_arg2 = recurse_escape!(ex.args[3], args)
+    ex.args[2], fmt_arg1 = recurse_process!(ex.args[2], escargs)
+    ex.args[3], fmt_arg2 = recurse_process!(ex.args[3], escargs)
 
     # If outmost, format as comparison, otherwise as a function call
     fmt = Formatter(false)
@@ -490,7 +486,7 @@ function recurse_escape_approx!(ex::Expr, args::Vector{Expr}; outmost::Bool=fals
 
     # Recursively update with keyword arguments
     for i in 4:length(ex.args)
-        ex.args[i], fmt_arg = recurse_escape!(ex.args[i], args)
+        ex.args[i], fmt_arg = recurse_process!(ex.args[i], escargs)
         print(fmt, fmt_arg)
         i == length(ex.args) || print(fmt, ", ")
     end
@@ -502,13 +498,13 @@ function recurse_escape_approx!(ex::Expr, args::Vector{Expr}; outmost::Bool=fals
     return ex, fmt
 end
 
-function recurse_escape_displayfunc!(ex::Expr, args::Vector{Expr}; outmost::Bool=false)
+function recurse_process_displayfunc!(ex::Expr, escargs::Vector{Expr}; outmost::Bool=false)
     ex_args = ex.args[2].args
 
     fmt = Formatter(false)
     print(fmt, string(ex.args[1]), "(")
     for i in eachindex(ex_args)
-        ex_args[i], fmt_arg = recurse_escape!(ex_args[i], args)
+        ex_args[i], fmt_arg = recurse_process!(ex_args[i], escargs)
         print(fmt, fmt_arg)
         i == length(ex_args) || print(fmt, ", ")
     end
@@ -520,7 +516,17 @@ function recurse_escape_displayfunc!(ex::Expr, args::Vector{Expr}; outmost::Bool
     return ex, fmt
 end
 
-function eval_testall(
+# Internal function used at `@test_all` runtime to get a `Returned` `Test.ExecutionResult`
+# with nice failure messages. Used in the code generated by `get_test_all_result()` at
+# compile time.
+# - `evaled`: the result of evaluating the processed expression returned by 
+#   `recurse_process!` (the one with references to `ARG[i]`) 
+# - `terms`: a vector of all terms that were broadcasted to produce `evaled`, which can 
+#    be used to produce individual failure messages. It is the result of evaluating and 
+#    concatenating the escaped arguments extracted by `recurse_process!()` into a vector.
+# - `fmt`: a FormatExpr-like string for pretty-printing an individual failure. It is the 
+#    result of `stringify!(f)` on the `Formatter` returned by `recurse_process!()`.
+function eval_test_all(
         @nospecialize(evaled),
         @nospecialize(terms),
         fmt::String, 
@@ -528,8 +534,8 @@ function eval_testall(
 
     # Try to evaluate all(). If there's a non-Bool TypeError, catch it and rethrow
     # with custom `NonBoolTypeError` for pretty-printing. Otherwise just rethrow.
-    # Either way, it will be caught and converted to a `Threw` execution result by the 
-    # `Test` infrastructure.
+    # Either way, it will be caught and converted to a `Threw` execution result in the
+    # wrapper code generated by `get_test_all_result()`.
     res = try 
         all(evaled)
     catch _e
@@ -545,10 +551,9 @@ function eval_testall(
         return Returned(res, nothing, source)
     end
 
-    # Catch invalid return values from all(). Should never really happen, unless 
-    # Note that result could still be `missing`, which is valid (and will be 
-    # pretty-printed also).
-    @assert res isa Union{Bool, Missing} "all() returned $(typeof(res)), not Missing or Bool."
+    # Catch invalid return values from all(). Should never happen, unless the user
+    # has overridden all(). 
+    @assert res === false "all(ex) returned $res, not `false`"
 
     # Broadcast the input terms and compile the formatting expression for pretty printing
     broadcasted_terms = Base.broadcasted(tuple, terms...)
@@ -607,14 +612,17 @@ function eval_testall(
     return Returned(false, String(take!(io)), source)
 end
 
-function get_testall_result(ex, source)
+# Internal function used at compile time to generate code that will produce the final 
+# `@test_all` `Test.ExecutionResult`. Wraps `eval_test_all()` in a try/catch block 
+# so that exceptions can be returned as `Test.Threw` result.
+function get_test_all_result(ex, source)
     escaped_args = Expr[]
-    mod_ex, fmt = recurse_escape!(ex, escaped_args; outmost=true)
+    mod_ex, fmt = recurse_process!(ex, escaped_args; outmost=true)
 
     result = quote
         try
-            let ARG = Any[$(escaped_args...)]
-                eval_testall(
+            let ARG = Any[$(escaped_args...)] # Use `let` for local scope on `ARG`
+                eval_test_all(
                     $(mod_ex), 
                     ARG, 
                     $(stringify!(fmt)),
@@ -677,7 +685,7 @@ Test Broken
 ````
 """
 macro test_all(ex, kws...)
-    # Collect the broken/skip keywords and remove them from the rest of keywords
+    # Collect the broken/skip keywords and remove them from the rest of keywords:
     kws, broken, skip = extract_broken_skip_keywords(kws...)
 
     # Add keywords to the expression
@@ -686,10 +694,9 @@ macro test_all(ex, kws...)
     # Get stringified expression before processing
     str_ex = "all(" * string(ex) * ")"
 
-    # Get result expression
-    result = get_testall_result(ex, __source__)
+    # Generate code to evaluate expression and return a `Test.ExecutionResult`
+    result = get_test_all_result(ex, __source__)
 
-    # Return the result expression
     result = quote
         if $(length(skip) > 0 && esc(skip[1]))
             record(get_testset(), Broken(:skipped, $str_ex))

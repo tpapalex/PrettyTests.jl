@@ -86,7 +86,7 @@
         end
     end
 
-    @testset "preprocess(ex)" begin
+    @testset "preprocess_test_all(ex)" begin
 
         @testset "convert to comparison" begin
             # Case is converted to :comparison call
@@ -101,7 +101,7 @@
             ]
 
             @testset "ex: $ex" for (ex, res) in cases
-                proc_ex = TM.preprocess(ex)
+                proc_ex = TM.preprocess_test_all(ex)
                 @test proc_ex == res
                 @test proc_ex !== res # returns new expression
             end
@@ -126,13 +126,13 @@
             ]
 
             @testset "ex: $ex" for (ex, res) in cases
-                proc_ex = TM.preprocess(ex)
+                proc_ex = TM.preprocess_test_all(ex)
                 @test proc_ex == res 
                 @test proc_ex !== res # returns new expression
             end
         end
 
-        @testset "no preprocessing" begin
+        @testset "no preprocess_test_alling" begin
             # Expression remains unchanged
             cases = [
                 :a, 
@@ -148,8 +148,8 @@
             ]
 
             @testset "ex: $ex" for ex in cases
-                @test TM.preprocess(deepcopy(ex)) == ex 
-                @test TM.preprocess(ex) === ex
+                @test TM.preprocess_test_all(deepcopy(ex)) == ex 
+                @test TM.preprocess_test_all(ex) === ex
             end
         end
     end
@@ -172,7 +172,7 @@
             ]
 
             @testset "ex: $ex ===> $res" for (ex, res) in cases
-                ex = TM.preprocess(ex)
+                ex = TM.preprocess_test_all(ex)
                 @test TM.isvecnegationexpr(ex) === res
             end
         end
@@ -194,7 +194,7 @@
             ]
 
             @testset "ex: $ex ===> $res" for (ex, res) in cases
-                ex = TM.preprocess(ex)
+                ex = TM.preprocess_test_all(ex)
                 @test TM.isveclogicalexpr(ex) === res
             end
         end
@@ -215,7 +215,7 @@
             ]
 
             @testset "$ex => $res" for (ex, res) in cases
-                ex = TM.preprocess(ex)
+                ex = TM.preprocess_test_all(ex)
                 @test TM.isveccomparisonexpr(ex) === res
             end
         end
@@ -238,7 +238,7 @@
                 :(a .|| b) => false,
             ]
             @testset "ex: $ex ===> $res" for (ex, res) in cases
-                ex = TM.preprocess(ex)
+                ex = TM.preprocess_test_all(ex)
                 @test TM.isvecapproxexpr(ex) === res
             end
         end
@@ -261,15 +261,15 @@
                 :(a .== b) => false,
             ]
             @testset "ex: $ex ===> $res" for (ex, res) in cases
-                ex = TM.preprocess(ex)
+                ex = TM.preprocess_test_all(ex)
                 @test TM.isvecdisplayexpr(ex) === res
             end
         end
     end
 
-    @testset "recurse_escape!()" begin 
+    @testset "recurse_process!()" begin 
 
-        escape! = (ex, args; kws...) -> TM.recurse_escape!(deepcopy(ex), args; kws...)
+        escape! = (ex, args; kws...) -> TM.recurse_process!(deepcopy(ex), args; kws...)
         stringify! = fmt_io -> TM.stringify!(fmt_io)
         @testset "basecase" begin
 
@@ -652,13 +652,7 @@
         end
 
         @testset "NonBoolTypeError" begin
-            struct TestStruct 
-                a::Int64
-                b::Float64
-            end
-            Base.show(io::IO, s::TestStruct) = print(io, "S(", s.a, ", ", s.b, ")")
 
-            destyle = x -> replace(x, r"\e\[\d+m" => "")
             f = evaled -> destyle(TM.NonBoolTypeError(evaled).msg)
 
             # Non-array
@@ -683,10 +677,10 @@
         end
     end
 
-    @testset "eval_testall()" begin
+    @testset "eval_test_all()" begin
 
         @testset "method error when evaling all()" begin
-            f = (evaled) -> TM.eval_testall(evaled, [evaled], "", LineNumberNode(1))
+            f = (evaled) -> TM.eval_test_all(evaled, [evaled], "", LineNumberNode(1))
             cases = [
                 :a,     
                 TestStruct(1,1)
@@ -697,7 +691,7 @@
         end
 
         @testset "non-Boolean in evaled argument" begin
-            f = (evaled) -> TM.eval_testall(evaled, [evaled], "", LineNumberNode(1))
+            f = (evaled) -> TM.eval_test_all(evaled, [evaled], "", LineNumberNode(1))
             cases = [
                 1, 
                 1:3, 
@@ -710,7 +704,7 @@
         end
 
         @testset "passing all()" begin
-            f = (evaled) -> TM.eval_testall(evaled, [evaled], "", LineNumberNode(1))
+            f = (evaled) -> TM.eval_test_all(evaled, [evaled], "", LineNumberNode(1))
             cases = [
                 true, 
                 [true, true], 
@@ -728,9 +722,8 @@
             end
         end
 
-        destyle = x -> replace(x, r"\e\[\d+m" => "")
         f = (evaled, terms, fmt) -> begin 
-            res = TM.eval_testall(evaled, terms, fmt, LineNumberNode(1))
+            res = TM.eval_test_all(evaled, terms, fmt, LineNumberNode(1))
             @assert res isa Test.Returned
             return destyle(res.data)
         end
@@ -794,8 +787,6 @@
     end
 
     @testset "@test_all fails" begin
-
-        destyle = x -> replace(x, r"\e\[\d+m" => "")
 
         let fails = @testset NoThrowTestSet begin
                 # 1: 1:3 .== 2:4
