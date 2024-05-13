@@ -24,13 +24,13 @@ const OPS_SETCOMP_CONVERTER = Dict(
 const _INDENT_SETOP = "              "; # Match indentation of @test "Evaluated: " line
 
 # ANSI color codes for pretty printing.
-const LCOLOR = Ref{Symbol}(:cyan)
-const RCOLOR = Ref{Symbol}(:magenta)
+const LCOLOR = Ref{Symbol}(:light_cyan)
+const RCOLOR = Ref{Symbol}(:light_green)
 
 # Various internal utilities for color-printing expressions with "(L)" and "(R)".
 function printL(
         io::IO, 
-        L::AbstractString="(L)", 
+        L::AbstractString="L", 
         suffixes::AbstractString...
     ) 
     printstyled(io, L, color=LCOLOR[], bold=true)
@@ -39,7 +39,7 @@ end
 
 function printR(
         io::IO, 
-        R::AbstractString="(R)", 
+        R::AbstractString="R", 
         suffixes::AbstractString...
     )
     printstyled(io, R, color=RCOLOR[], bold=true)
@@ -96,7 +96,12 @@ end
 # `Evaluated: ` line.
 function stringify_expr_test_sets(ex)
     suffix = ex.args[1] === :∩ ? " == ∅" : ""
-    return sprint(printLsepR, "(L)", string(ex), "(R)", suffix, context = :color => true)
+    return sprint(printLsepR, 
+                  string(ex.args[2]),
+                  string(ex.args[1]),
+                  string(ex.args[3]),
+                  suffix, 
+                  context = :color => true)
 end
 
 
@@ -104,7 +109,7 @@ end
 
 # Internal function to process an expression `ex` for use in `@test_sets`. Validates
 # the form `L <op> R` and convert any operator aliases to the canonical version.
-function preprocess_test_sets(ex)
+function process_expr_test_sets(ex)
     if isexpr(ex, :call, 3)
         op, L, R = ex.args
         op = get(OPS_SETCOMP_CONVERTER, op, op)
@@ -145,39 +150,39 @@ function eval_test_sets(L, op, R, source)
         ioc = IOContext(io, :color => true)
 
         if op === :(==) # issetequal(L, R)
-            printLsepR(ioc, "(L)", "and", "(R)", " are not equal.")
-            printset(ioc, setdiff(R, L), RminusL)
+            printLsepR(ioc, "L", "and", "R", " are not equal.")
             printset(ioc, setdiff(L, R), LminusR)
+            printset(ioc, setdiff(R, L), RminusL)
 
         elseif op === :!= || op === :≠ # !issetequal(L, R)
-            printLsepR(ioc, "(L)", "and", "(R)", " are equal.")
+            printLsepR(ioc, "L", "and", "R", " are equal.")
 
         elseif op === :⊆  # issubset(L, R)
-            printLsepR(ioc, "(L)", "is not a subset of", "(R)", ".")
+            printLsepR(ioc, "L", "is not a subset of", "R", ".")
             printset(ioc, setdiff(L, R), LminusR)
 
         elseif op === :⊇ # issubset(R, L)
-            printLsepR(ioc, "(L)", "is not a superset of", "(R)", ".")
+            printLsepR(ioc, "L", "is not a superset of", "R", ".")
             printset(ioc, setdiff(R, L), RminusL)
 
         elseif op === :⊊ && issetequal(L, R) # L ⊊ R (failure b/c not *proper* subset)
-            printLsepR(ioc, "(L)", "and", "(R)", " are equal; ")
-            printL(ioc, "(L)", " is not a proper subset.")
+            printLsepR(ioc, "L", "and", "R", " are equal; ")
+            printL(ioc, "L", " is not a proper subset.")
 
         elseif op === :⊊ # L ⊊ R (failure because L has extra elements)
-            printLsepR(ioc, "(L)", "is not a proper subset of", "R", ".")
+            printLsepR(ioc, "L", "is not a proper subset of", "R", ".")
             printset(ioc, setdiff(L, R), LminusR)
 
         elseif op === :⊋ && issetequal(L, R) # L ⊋ R (failure b/c not *proper* superset)
-            printLsepR(ioc, "(L)", "and", "(R)", " are equal; ")
-            printL("L", ioc, " is not a proper superset.")
+            printLsepR(ioc, "L", "and", "R", " are equal; ")
+            printL(ioc, "L", " is not a proper superset.")
 
         elseif op === :⊋ # L ⊋ R (failure because R has extra elements)
-            printLsepR(ioc, "(L)", "is not a proper superset of", "(R)", ".")
+            printLsepR(ioc, "L", "is not a proper superset of", "R", ".")
             printset(ioc, setdiff(R, L), RminusL)
 
         elseif op === :∩ # isdisjoint(L, R)
-            printLsepR(ioc, "(L)", "and", "(R)", " are not disjoint.")
+            printLsepR(ioc, "L", "and", "R", " are not disjoint.")
             printset(ioc, intersect(L, R), LintersectR)
 
         else
@@ -195,7 +200,6 @@ end
 # `@test_sets` `Test.ExecutionResults`. Wraps `eval_test_sets()` in a try/catch block 
 # so that exceptions can be returned as `Test.Threw` result.
 function get_test_sets_result(ex, source)
-    ex = preprocess_test_sets(ex)
     op, L, R = ex.args    
 
     result = quote
@@ -222,7 +226,8 @@ macro test_sets(ex, kws...)
     # Ensure that no other expressions are present
     length(kws) == 0 || error("invalid test macro call: @test_sets $ex $(join(kws, " "))")
     
-    # Get the stringified expression before processing
+    # Process expression and get stringified version
+    ex = process_expr_test_sets(ex)
     str_ex = stringify_expr_test_sets(ex)
 
     # Generate code to evaluate expression and return a `Test.ExecutionResult`
