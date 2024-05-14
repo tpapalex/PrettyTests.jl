@@ -138,13 +138,17 @@
             res = f([1,2,3], [1,1,1])
             @test res.value === true
             
-            res = f(Set([1,2,3]), [3,2,1])
+            res = f([1,2,3], Set([3,2,1]))
             @test res.value === false
-            @test destyle(res.data) == "L and R are equal."
+            msg = destyle(res.data)
+            @test startswith(msg, "L and R are equal.")
+            @test contains(msg, "L = R has 3 elements: [1, 2, 3]")
 
-            res = f([1,1,1,2,1], [2,1])
+            res = f([2,1,1,1,1], [1,2])
             @test res.value === false
-            @test destyle(res.data) == "L and R are equal."
+            msg = destyle(res.data)
+            @test startswith(msg, "L and R are equal.")
+            @test contains(msg, "L = R has 2 elements: [2, 1]")
         end
 
         @testset "op: ⊆" begin
@@ -206,10 +210,11 @@
             res = f(1:5, 0:10)
             @test res.value === true
 
-            res = f([1,2,2,3], [1,2,3,1])
+            res = f([1,3,2,3], [1,2,3,1])
             @test res.value === false
             msg = destyle(res.data)
             @test startswith(msg, "L is not a proper subset of R, it is equal.")
+            @test contains(msg, "L = R has 3 elements: [1, 3, 2]")
 
             res = f(Set([1,2,3]), [1,2])
             @test res.value === false
@@ -233,10 +238,11 @@
             res = f(0:10, 1:5)
             @test res.value === true
 
-            res = f([1,2,3,1], [1,2,2,3])
+            res = f([1,2,3,1], [1,3,2,3])
             @test res.value === false
             msg = destyle(res.data)
             @test startswith(msg, "L is not a proper superset of R, it is equal.")
+            @test contains(msg, "L = R has 3 elements: [1, 2, 3]")
 
             res = f([1,2], Set([1,2,3]))
             @test res.value === false

@@ -80,6 +80,7 @@ end
 
 const LminusR = sprint(printLsepR, "L", "∖", "R", context = :color => false)
 const RminusL = sprint(printRsepL, "R", "∖", "L", context = :color => false)
+const LequalR = sprint(printLsepR, "L", "=", "R", context = :color => false)
 const LintersectR = sprint(printLsepR, "L", "∩", "R", context = :color => false)
 
 # Print a set or vector compactly, with a description:
@@ -92,14 +93,19 @@ function printset(io::IO, v::Union{AbstractVector, AbstractSet}, desc::AbstractS
     Base.show_vector(io_compact, v)
 end
 
+function printset(io::IO, v, desc::AbstractString)
+    printset(io, collect(v), desc)
+end
+
 # Stringify a processed `@test_sets` expression, to be printed in the `@test`
 # `Evaluated: ` line.
 function stringify_expr_test_sets(ex)
     suffix = ex.args[1] === :∩ ? " == ∅" : ""
+    
     return sprint(printLsepR, 
-                  string(ex.args[2]),
-                  string(ex.args[1]),
-                  string(ex.args[3]),
+                  sprint(Base.show_unquoted, ex.args[2]),
+                  sprint(Base.show_unquoted, ex.args[1]),
+                  sprint(Base.show_unquoted, ex.args[3]),
                   suffix, 
                   context = :color => true)
 end
@@ -166,6 +172,7 @@ function eval_test_sets(L, op, R, source)
 
         elseif op === :!= || op === :≠ # !issetequal(L, R)
             printLsepR(ioc, "L", "and", "R", " are equal.")
+            printset(ioc, intersect(L, R), LequalR)
 
         elseif op === :⊆  # issubset(L, R)
             printLsepR(ioc, "L", "is not a subset of", "R", ".")
@@ -177,6 +184,7 @@ function eval_test_sets(L, op, R, source)
 
         elseif op === :⊊ && issetequal(L, R) # L ⊊ R (failure b/c not *proper* subset)
             printLsepR(ioc, "L", "is not a proper subset of", "R", ", it is equal.")
+            printset(ioc, intersect(L, R), LequalR)
 
         elseif op === :⊊ # L ⊊ R (failure because L has extra elements)
             printLsepR(ioc, "L", "is not a proper subset of", "R", ".")
@@ -184,6 +192,7 @@ function eval_test_sets(L, op, R, source)
 
         elseif op === :⊋ && issetequal(L, R) # L ⊋ R (failure b/c not *proper* superset)
             printLsepR(ioc, "L", "is not a proper superset of", "R", ", it is equal.")
+            printset(ioc, intersect(L, R), LequalR)
 
         elseif op === :⊋ # L ⊋ R (failure because R has extra elements)
             printLsepR(ioc, "L", "is not a proper superset of", "R", ".")
@@ -230,66 +239,89 @@ end
 
 """
     @test_sets L op R
+    @test_sets L op R broken=true
+    @test_sets L op R skip=true
 
-Tests that the expression `L op R` returns `true`, where `op` is an *set comparison*
-operator. `L` and `R` can be any iterable collection that supports set-like operations.
+Tests that the expression `L op R` returns `true`, where `op` is an infix operator
+interpreted as a set-like comparison:
 
-The following infix operators are supported:
-- `==` tests that `issetequal(L, R)`
-- `!=` or `≠` (`\\neq`) tests for `!issetequal(L, R)`
-- `⊆` (`\\subseteq`) or `⊂` (`\\subset`) tests that `issubset(L, R)`
-- `⊇` (`\\supseteq`) or `⊃` (`\\supset`) tests that `issubset(R, L)`
-- `⊊` (`\\subsetneq`) tests that `issubset(L, R) && length(L) != length(R)`
-- `⊋` (`\\supsetneq`) tests that `issubset(R, L) && length(L) != length(R)`
-- `∩` (`\\cap`) or `||` tests that `isdisjoint(L, R)`
+- `L == R` expands to `issetequal(L, R)`
+- `L != R` or `L ≠ R` expands to `!issetequal(L, R)`
+- `L ⊆ R` or `L ⊂ R` expands to `⊆(L, R)`
+- `L ⊇ R` or `L ⊃ R` expands to `⊇(L, R)`
+- `L ⊊ R` expands to `⊊(L, R)`
+- `L ⊋ R` expands to `⊋(L, R)`
+- `L ∩ R` or `L || R` expands to `isdisjoint(L, R)`
 
-!!! note "∩ syntax"
-    The last point represents a slight abuse of notation, in that disjointness is
+You can use any `L` and `R` that work with the expanded expressions (including tuples, 
+arrays, sets, dictionaries and strings). The `∅` symbol can also be used for either 
+expression as shorth and for `Set()`.
+
+The only additional limitation is that `setdiff(L, R)` and `intersect(L, R)` must also
+work, since they are used to generate informative failure messages in some cases.
+
+See also: [`Base.issetequal`](@extref Julia), [`Base.issubset`](@extref Julia),
+[`Base.isdisjoint`](@extref Julia), [`Base.setdiff`](@extref Julia), 
+[`Base.intersect`](@extref Julia).
+
+!!! note "Disjointness"
+    The last form represents a slight abuse of notation, in that `isdisjoint(L, R)` is
     better notated as `L ∩ R == ∅`. The macro also supports this syntax, in addition 
     to shorthand `L ∩ R` and `L || R`.
+
+!!! note "Typing unicode characters"
+    Unicode operators like the above can be typed in Julia editors by typing 
+    `\\<name><tab>`. The ones supported by this macro are `≠` (`\\neq`), 
+    `⊆` (`\\subseteq`), `⊇` (`\\supseteq`), `⊂` (`\\subset`),`⊃` (`\\supset`), 
+    `⊊` (`\\subsetneq`), `⊋` (`\\supsetneq`), `∩` (\\cap), and `∅` (`\\emptyset`). 
 
 # Examples 
 
 ```jldoctest; filter = r"(\\e\\[\\d+m|\\s+)"
-julia> @test_sets Set([1,2]) == [2,1,1,1]
+julia> @test_sets (1,2) == (2,1,1,1)
 Test Passed
 
-julia> @test_sets [2,5] ⊆ 1:10
+julia> @test_sets ∅ ⊆ 1:10
 Test Passed
 
-julia> @test_sets [1,42] ⊆ 1:20
+julia> @test_sets 1:20 ⊇ 42
 Test Failed at none:1
-  Expression: [1, 42] ⊆ 1:20
-   Evaluated: L is not a subset of R.
-             L ∖ R has 1 element:  [42]
+  Expression: 1:20 ⊇ 42
+   Evaluated: L is not a superset of R.
+              R ∖ L has 1 element:  [42]
 
-julia> @test_sets [2,1,1,2,3] == Set(2)
+julia> @test_sets [1,2,3] ∩ [2,3,4]
 Test Failed at none:1
-  Expression: [2, 1, 1, 2, 3] == Set(2)
-   Evaluated: L and R are not equal.
-              L ∖ R has 2 elements: [1, 3]
-              R ∖ L has 0 elements: []
-
-julia> @test_sets [1,2,3] ∩ [3,4,5]
-Test Failed at none:1
-  Expression: [1, 2, 3] ∩ [3, 4, 5] == ∅
+  Expression: [1, 2, 3] ∩ [2, 3, 4] == ∅
    Evaluated: L and R are not disjoint.
-              L ∩ R has 1 element:  [3]
+              L ∩ R has 2 elements: [2, 3]
+
+julia> @test_sets "baabaa" ≠ 'a':'b'
+Test Failed at none:1
+  Expression: "baabaa" ≠ 'a':'b'
+   Evaluated: L and R are equal.
 ```
 
-The `∅` (`\\emptyset`) character can be used as shorthand for `Set()` in any set 
-comparison:
+The macro supports `broken=cond` and `skip=cond` keywords, with similar behavior 
+to [`Test.@test`](@extref Julia):
 
-```jldoctest; filter = r"(\\e\\[\\d+m|\\s+)"
-julia> @test_sets Set() == ∅
-Test Passed
+# Examples
 
-julia> @test_sets [1,2,3] ≠ ∅
-Test Passed
+```jldoctest; filter = r"(\\e\\[\\d+m|\\s+|ERROR.*)"
+julia> @test_sets 1 ⊆ 2:3 broken=true
+Test Broken
+  Expression: 1 ⊆ 2:3
+
+julia> @test_sets 1 ⊆ 1:3 broken=true
+Error During Test at none:1
+ Unexpected Pass
+ Expression: 1 ⊆ 1:3
+ Got correct result, please change to @test if no longer broken.
+
+julia> @test_sets 1 ⊆ 2:3 skip=true
+Test Broken
+  Skipped: 1 ⊆ 2:3
 ```
-
-See also [`Base.issetequal`](@extref Julia), [`Base.issubset`](@extref Julia),
-[`Base.isdisjoint`](@extref Julia).
 """
 macro test_sets(ex, kws...)    
     # Collect the broken/skip keywords and remove them from the rest of keywords:
@@ -314,5 +346,4 @@ macro test_sets(ex, kws...)
             end
         end
     end
-
 end
