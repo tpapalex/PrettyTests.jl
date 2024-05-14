@@ -24,8 +24,8 @@ const OPS_SETCOMP_CONVERTER = Dict(
 const _INDENT_SETOP = "              "; # Match indentation of @test "Evaluated: " line
 
 # ANSI color codes for pretty printing.
-const LCOLOR = Ref{Symbol}(:light_cyan)
-const RCOLOR = Ref{Symbol}(:light_green)
+const LCOLOR = Ref{Symbol}(:cyan)
+const RCOLOR = Ref{Symbol}(:magenta)
 
 # Various internal utilities for color-printing expressions with "(L)" and "(R)".
 function printL(
@@ -78,9 +78,9 @@ function printRsepL(
     print(io, suffixes...)
 end
 
-const LminusR = sprint(printLsepR, "L", "∖", "R", context = :color => true)
-const RminusL = sprint(printRsepL, "R", "∖", "L", context = :color => true)
-const LintersectR = sprint(printLsepR, "L", "∩", "R", context = :color => true)
+const LminusR = sprint(printLsepR, "L", "∖", "R", context = :color => false)
+const RminusL = sprint(printRsepL, "R", "∖", "L", context = :color => false)
+const LintersectR = sprint(printLsepR, "L", "∩", "R", context = :color => false)
 
 # Print a set or vector compactly, with a description:
 function printset(io::IO, v::Union{AbstractVector, AbstractSet}, desc::AbstractString)
@@ -110,6 +110,18 @@ end
 # Internal function to process an expression `ex` for use in `@test_sets`. Validates
 # the form `L <op> R` and convert any operator aliases to the canonical version.
 function process_expr_test_sets(ex)
+
+    # Special case in case someone uses `a ∩ b == ∅`
+    if isexpr(ex, :call, 3) && 
+        ex.args[1] === :(==) && 
+        isexpr(ex.args[2], :call, 3) && 
+        ex.args[2].args[1] === :∩ && 
+        ex.args[3] === :∅
+
+        ex = ex.args[2]
+    end
+
+
     if isexpr(ex, :call, 3)
         op, L, R = ex.args
         op = get(OPS_SETCOMP_CONVERTER, op, op)
@@ -166,16 +178,14 @@ function eval_test_sets(L, op, R, source)
             printset(ioc, setdiff(R, L), RminusL)
 
         elseif op === :⊊ && issetequal(L, R) # L ⊊ R (failure b/c not *proper* subset)
-            printLsepR(ioc, "L", "and", "R", " are equal; ")
-            printL(ioc, "L", " is not a proper subset.")
+            printLsepR(ioc, "L", "is not a proper subset of", "R", ", it is equal.")
 
         elseif op === :⊊ # L ⊊ R (failure because L has extra elements)
             printLsepR(ioc, "L", "is not a proper subset of", "R", ".")
             printset(ioc, setdiff(L, R), LminusR)
 
         elseif op === :⊋ && issetequal(L, R) # L ⊋ R (failure b/c not *proper* superset)
-            printLsepR(ioc, "L", "and", "R", " are equal; ")
-            printL(ioc, "L", " is not a proper superset.")
+            printLsepR(ioc, "L", "is not a proper superset of", "R", ", it is equal.")
 
         elseif op === :⊋ # L ⊋ R (failure because R has extra elements)
             printLsepR(ioc, "L", "is not a proper superset of", "R", ".")

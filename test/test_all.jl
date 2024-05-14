@@ -886,6 +886,23 @@
                         "Argument: 3-element BitVector, 1 failure:",
                         "[2]: 1 == 1:2 ===> false",
                     ])
+
+                    # 12 
+                    @test_all [1] .== missing
+                    push!(messages, [
+                        "Expression: all([1] .== missing)",
+                        "Evaluated: missing",
+                        "Argument: 1-element Vector{Missing}, 1 missing:",
+                        "[1]: 1 == missing ===> missing",
+                    ])
+
+                    # 13
+                    @test_all 1 .== missing
+                    push!(messages, [
+                        "Expression: all(1 .== missing)",
+                        "Evaluated: missing",
+                        "Argument: 1 == missing ===> missing",
+                    ])
                 end
 
                 

@@ -68,6 +68,7 @@
                 :(issetequal(L, R)) => :(L == R),
                 :(isdisjoint(L, R)) => :(L ∩ R),
                 :(issubset(L, R)) => :(L ⊆ R),
+                :(L ∩ B == ∅) => :(L ∩ B),
             ]
 
             @testset "$ex" for (ex, res) in cases
@@ -206,7 +207,7 @@
             res = f([1,2,2,3], [1,2,3,1])
             @test res.value === false
             msg = destyle(res.data)
-            @test startswith(msg, "L and R are equal; L is not a proper subset.")
+            @test startswith(msg, "L is not a proper subset of R, it is equal.")
 
             res = f(Set([1,2,3]), [1,2])
             @test res.value === false
@@ -233,7 +234,7 @@
             res = f([1,2,3,1], [1,2,2,3])
             @test res.value === false
             msg = destyle(res.data)
-            @test startswith(msg, "L and R are equal; L is not a proper superset.")
+            @test startswith(msg, "L is not a proper superset of R, it is equal.")
 
             res = f([1,2], Set([1,2,3]))
             @test res.value === false
@@ -343,7 +344,7 @@
                     @test_sets [1,2,3] ⊊ b
                     push!(messages, [
                         "Expression: [1, 2, 3] ⊊ b",
-                        "Evaluated: L and R are equal; L is not a proper subset.",
+                        "Evaluated: L is not a proper subset of R, it is equal.",
                     ])
 
                     # 6
@@ -358,7 +359,7 @@
                     @test_sets SET ⊋ [6,5]
                     push!(messages, [
                         "Expression: SET ⊋ [6, 5]",
-                        "Evaluated: L and R are equal; L is not a proper superset.",
+                        "Evaluated: L is not a proper superset of R, it is equal.",
                     ])
 
                     # 8
