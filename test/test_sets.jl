@@ -68,7 +68,9 @@
                 :(issetequal(L, R)) => :(L == R),
                 :(isdisjoint(L, R)) => :(L ∩ R),
                 :(issubset(L, R)) => :(L ⊆ R),
-                :(L ∩ B == ∅) => :(L ∩ B),
+                # Disjoint syntactic sugar
+                :(L ∩ R == ∅) => :(L ∩ R),
+                :(∅ == L ∩ R) => :(L ∩ R),
             ]
 
             @testset "$ex" for (ex, res) in cases
@@ -281,29 +283,39 @@
             @test_sets 1:2 == [2,1]
             @test_sets [1,1] == Set(1)
             @test_sets issetequal([1,3,3,1], 1:2:3)
+            @test_sets ∅ == ∅
             
             @test_sets [1,2] != 1:3
             @test_sets Set(1:3) ≠ 2
+            @test_sets ∅ ≠ [1 2]
 
             @test_sets 1:2 ⊆ [1,2]
             @test_sets 3 ⊂ Set(3)
             @test_sets issubset([1,2],0:100)
+            @test_sets ∅ ⊆ 1:2
 
             @test_sets [1,2] ⊇ 1:2
             @test_sets Set(3) ⊃ [3]
             @test_sets 0:100 ⊇ [42,42]
+            @test_sets 1:2 ⊇ ∅
 
             @test_sets [1,2] ⊊ 1:3
             @test_sets 1 ⊊ [1,2,1]
             @test_sets [3] ⊊ Set(1:3)
+            @test_sets ∅ ⊊ 1
 
             @test_sets [1,2,3] ⊋ 1:2
             @test_sets 1:100 ⊋ [42,42]
             @test_sets Set(1:3) ⊋ [3]
+            @test_sets 1 ⊋ ∅
 
             @test_sets [1,2,3] ∩ [4,5]
             @test_sets 1:5 || 6:8
             @test_sets isdisjoint(3, Set([1,2]))
+            @test_sets ∅ ∩ ∅ == ∅
+            @test_sets isdisjoint(∅, 1:2)
+            @test_sets 1 ∩ [2,3] == ∅
+            @test_sets ∅ == [4,5] ∩ Set(6)
         end
 
         @testset "Fail" begin
@@ -426,6 +438,20 @@
                     push!(messages, [
                         "Expression: 1:5 ⊆ 3",
                         "Evaluated: L is not a subset of R.",
+                    ])
+
+                    # 17
+                    @test_sets ∅ ⊋ ∅
+                    push!(messages, [
+                        "Expression: ∅ ⊋ ∅",
+                        "Evaluated: L is not a proper superset of R, it is equal.",
+                    ])
+
+                    # 18
+                    @test_sets ∅ == 1:5
+                    push!(messages, [
+                        "Expression: ∅ == 1:5",
+                        "Evaluated: L and R are not equal.",
                     ])
 
                 end

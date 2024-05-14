@@ -650,17 +650,19 @@ Performs the same test as `@test all(ex)`, but without short-circuiting. This al
 more informative failure messages to be printed for each element of `ex` that was `false`.
 
 # Examples
-```jldoctest
+```jldoctest; filter = r"\\e\\[\\d+m"
 julia> @test_all [1.0, 2.0] .== 1:2
 Test Passed
 
 julia> @test_all [1, 2, 3] .< 2
-Test Failed
-  Expression: all([1, 2, 3] .<= 2)
+Test Failed at none:1
+  Expression: all([1, 2, 3] .< 2)
    Evaluated: false
     Argument: 3-element BitVector, 2 failures:
-              [2]: 2 < 2 ===> false
-              [3]: 3 < 2 ===> false
+              [2]: 2 < 2[93m ===> false[39m
+              [3]: 3 < 2[93m ===> false[39m
+
+ERROR: There was an error during testing
 ```
 
 The form `@test_all f(args...) key=val...` is equivalent to writing 

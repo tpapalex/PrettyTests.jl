@@ -3,13 +3,18 @@ using Documenter
 
 DocMeta.setdocmeta!(TestMacroExtensions, :DocTestSetup, :(using TestMacroExtensions); recursive=true)
 
+# makedocs(
+#     sitename="TestMacroExtensions.jl",
+# )
 makedocs(;
     modules=[TestMacroExtensions],
     authors="Ted Papalexopoulos",
     sitename="TestMacroExtensions.jl",
+    doctest = true,
     format=Documenter.HTML(;
+        prettyurls = "true",
         canonical="https://tpapalex.github.io/TestMacroExtensions.jl",
-        edit_link="main",
+        edit_link="dev",
         assets=String[],
     ),
     pages=[
@@ -17,7 +22,7 @@ makedocs(;
     ],
 )
 
-deploydocs(;
-    repo="github.com/tpapalex/TestMacroExtensions.jl",
-    devbranch="main",
-)
+# deploydocs(;
+#     repo="github.com/tpapalex/TestMacroExtensions.jl",
+#     devbranch="main",
+# )

@@ -112,15 +112,13 @@ end
 function process_expr_test_sets(ex)
 
     # Special case in case someone uses `a ∩ b == ∅`
-    if isexpr(ex, :call, 3) && 
-        ex.args[1] === :(==) && 
-        isexpr(ex.args[2], :call, 3) && 
-        ex.args[2].args[1] === :∩ && 
-        ex.args[3] === :∅
-
-        ex = ex.args[2]
+    if isexpr(ex, :call, 3) && ex.args[1] === :(==) 
+        if isexpr(ex.args[2], :call, 3) && ex.args[2].args[1] === :∩ && ex.args[3] === :∅
+            ex = ex.args[2]
+        elseif isexpr(ex.args[3], :call, 3) && ex.args[3].args[1] === :∩ && ex.args[2] === :∅
+            ex = ex.args[3]
+        end
     end
-
 
     if isexpr(ex, :call, 3)
         op, L, R = ex.args
@@ -211,7 +209,9 @@ end
 # so that exceptions can be returned as `Test.Threw` result.
 function get_test_sets_result(ex, source)
     op, L, R = ex.args    
-
+    if L === :∅ L = :(Set()) end
+    if R === :∅ R = :(Set()) end
+    
     result = quote
         try 
             eval_test_sets(
@@ -228,6 +228,17 @@ function get_test_sets_result(ex, source)
     result
 end
 
+"""
+    @test_sets L op R
+    @test_sets L ∩ R == ∅
+
+Tests that a set comparison `L <op> R` is true, with informative failure messages. 
+
+`L` and `R` can be any container type (e.g. vectors, sets, or scalars) or the empty 
+set symbol ∅. The following operators `op` are supported:
+
+
+"""
 
 macro test_sets(ex, kws...)    
     # Collect the broken/skip keywords and remove them from the rest of keywords:
