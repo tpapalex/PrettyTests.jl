@@ -230,16 +230,67 @@ end
 
 """
     @test_sets L op R
-    @test_sets L ∩ R == ∅
 
-Tests that a set comparison `L <op> R` is true, with informative failure messages. 
+Tests that the expression `L op R` returns `true`, where `op` is an *set comparison*
+operator. `L` and `R` can be any iterable collection that supports set-like operations.
 
-`L` and `R` can be any container type (e.g. vectors, sets, or scalars) or the empty 
-set symbol ∅. The following operators `op` are supported:
+The following infix operators are supported:
+- `==` tests that `issetequal(L, R)`
+- `!=` or `≠` (`\\neq`) tests for `!issetequal(L, R)`
+- `⊆` (`\\subseteq`) or `⊂` (`\\subset`) tests that `issubset(L, R)`
+- `⊇` (`\\supseteq`) or `⊃` (`\\supset`) tests that `issubset(R, L)`
+- `⊊` (`\\subsetneq`) tests that `issubset(L, R) && length(L) != length(R)`
+- `⊋` (`\\supsetneq`) tests that `issubset(R, L) && length(L) != length(R)`
+- `∩` (`\\cap`) or `||` tests that `isdisjoint(L, R)`
 
+!!! note "∩ syntax"
+    The last point represents a slight abuse of notation, in that disjointness is
+    better notated as `L ∩ R == ∅`. The macro also supports this syntax, in addition 
+    to shorthand `L ∩ R` and `L || R`.
 
+# Examples 
+
+```jldoctest; filter = r"(\\e\\[\\d+m|\\s+)"
+julia> @test_sets Set([1,2]) == [2,1,1,1]
+Test Passed
+
+julia> @test_sets [2,5] ⊆ 1:10
+Test Passed
+
+julia> @test_sets [1,42] ⊆ 1:20
+Test Failed at none:1
+  Expression: [1, 42] ⊆ 1:20
+   Evaluated: L is not a subset of R.
+             L ∖ R has 1 element:  [42]
+
+julia> @test_sets [2,1,1,2,3] == Set(2)
+Test Failed at none:1
+  Expression: [2, 1, 1, 2, 3] == Set(2)
+   Evaluated: L and R are not equal.
+              L ∖ R has 2 elements: [1, 3]
+              R ∖ L has 0 elements: []
+
+julia> @test_sets [1,2,3] ∩ [3,4,5]
+Test Failed at none:1
+  Expression: [1, 2, 3] ∩ [3, 4, 5] == ∅
+   Evaluated: L and R are not disjoint.
+              L ∩ R has 1 element:  [3]
+```
+
+The `∅` (`\\emptyset`) character can be used as shorthand for `Set()` in any set 
+comparison:
+
+```jldoctest; filter = r"(\\e\\[\\d+m|\\s+)"
+julia> @test_sets Set() == ∅
+Test Passed
+
+julia> @test_sets [1,2,3] ≠ ∅
+Test Passed
+```
+
+See also [`Base.issetequal`](@extref Julia), [`Base.issubset`](@extref Julia),
+[`Base.isdisjoint`](@extref Julia).
 """
-
 macro test_sets(ex, kws...)    
     # Collect the broken/skip keywords and remove them from the rest of keywords:
     kws, broken, skip = extract_broken_skip_keywords(kws...)

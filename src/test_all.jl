@@ -30,14 +30,33 @@ const OPS_APPROX = (:.≈, :.≉)
 const MAX_PRINT_FAILURES = Ref{Int64}(10)
 
 """
-    set_max_print_failures(n::Integer)
+    set_max_print_failures(n::Union{Integer,Nothing}=10)
 
-Sets the global module parameter that determines how many of the individual failures in 
-a failing `@testall` test should be printed. If `n` is 0, then only the number of 
-failures.
+Set the number of individual failures that will be printed in a failing 
+[`@test_all`](@ref) test. The failure summary will still show the total number
+of failed tests, but only the first/last `n` will be individually printed. If 
+`n === nothing`, all failures will be printed. 
 
-If `n` is 0, then only the summary (number and type of failures will be printed). If `n`
-is `nothing`, then all failures will be printed.
+```jldoctest; filter = r"(\\e\\[\\d+m|\\s+)", setup = (using TestMacroExtensions: set_max_print_failures)
+julia> set_max_print_failures(2);
+
+julia> @test_all 1:10 .< 0
+Test Failed at none:1
+  Expression: all(1:10 .< 0)
+   Evaluated: false
+    Argument: 10-element BitVector, 10 failures: 
+              [ 1]: 1 < 0 ===> false
+              ⋮
+              [10]: 10 < 0 ===> false
+
+julia> set_max_print_failures(0);
+
+julia> @test_all 1:100 .< 0
+Test Failed at none:1
+  Expression: all(1:100 .< 0)
+   Evaluated: false
+    Argument: 100-element BitVector, 100 failures
+```
 """
 function set_max_print_failures(n::Integer = 10)
     @assert n >= 0 "Max number of failures to print must be non-negative."
@@ -48,12 +67,6 @@ function set_max_print_failures(::Nothing)
     return
 end
 
-"""
-    get_max_print_failures()::Int64
-
-Retrieves the value of the global module parameter that determines how many of the
-individual failures in a failing `@testall` test should be printed.
-"""
 get_max_print_failures() = MAX_PRINT_FAILURES[]
 
 #################### Pre-processing expressions ###################
@@ -73,16 +86,12 @@ function string_unvec(x::Symbol)
     return sx[1] == '.' ? sx[2:end] : sx 
 end
 
-"""
-    pushkeywords!(ex, kws...)
 
-Preprocess `@testall` expressions of function calls with trailing keyword arguments, 
-so that e.g. `@testall a .≈ b atol=ε` means `@testall .≈(a, b, atol=ε)`.
-
-If `ex` is a negation expression (either a `!` or `.!` call), keyword arguments will 
-be added to the inner expression, so that `@testall .!(a .≈ b) atol=ε` means 
-`@testall .!(.≈(a, b, atol=ε))`.
-"""
+# Preprocess `@testall` expressions of function calls with trailing keyword arguments, 
+# so that e.g. `@testall a .≈ b atol=ε` means `@testall .≈(a, b, atol=ε)`.
+# If `ex` is a negation expression (either a `!` or `.!` call), keyword arguments will 
+# be added to the inner expression, so that `@testall .!(a .≈ b) atol=ε` means 
+# `@testall .!(.≈(a, b, atol=ε))`.
 pushkeywords!(ex) = ex
 
 function pushkeywords!(ex, kws...)
@@ -650,7 +659,7 @@ Performs the same test as `@test all(ex)`, but without short-circuiting. This al
 more informative failure messages to be printed for each element of `ex` that was `false`.
 
 # Examples
-```jldoctest; filter = r"\\e\\[\\d+m"
+```jldoctest; filter = r"(\\e\\[\\d+m|\\s+|ERROR.*)"
 julia> @test_all [1.0, 2.0] .== 1:2
 Test Passed
 
@@ -659,10 +668,8 @@ Test Failed at none:1
   Expression: all([1, 2, 3] .< 2)
    Evaluated: false
     Argument: 3-element BitVector, 2 failures:
-              [2]: 2 < 2[93m ===> false[39m
-              [3]: 3 < 2[93m ===> false[39m
-
-ERROR: There was an error during testing
+              [2]: 2 < 2 ===> false
+              [3]: 3 < 2 ===> false
 ```
 
 The form `@test_all f(args...) key=val...` is equivalent to writing 
@@ -688,7 +695,7 @@ Test Broken
 julia> @test_all [1, 2, 3] .< 2 skip=true
 Test Broken
   Skipped: all([1, 2, 3] .< 2)
-````
+```
 """
 macro test_all(ex, kws...)
     # Collect the broken/skip keywords and remove them from the rest of keywords:
