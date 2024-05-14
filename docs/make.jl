@@ -12,7 +12,7 @@ makedocs(;
     sitename="TestMacroExtensions.jl",
     doctest = true,
     format=Documenter.HTML(;
-        prettyurls = "true",
+        prettyurls = true,
         canonical="https://tpapalex.github.io/TestMacroExtensions.jl",
         edit_link="dev",
         assets=String[],

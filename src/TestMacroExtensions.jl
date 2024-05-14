@@ -10,7 +10,7 @@ module TestMacroExtensions
 
     const isexpr = Meta.isexpr
 
-    include("utilities.jl")
+    include("helpers.jl")
     include("test_sets.jl")
     include("test_all.jl")
 
