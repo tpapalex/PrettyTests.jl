@@ -285,15 +285,17 @@
 
             @testset "ex: $ex" for ex in cases
                 args = Expr[]
-                res, fmt  = escape!(ex, args; outmost=true)
-            
+
+                res, str, fmt  = escape!(ex, args; outmost=true)
                 @test args == Expr[esc(ex)]
                 @test res == :(ARG[1])
+                @test stringify!(str) == sprint(Base.show_unquoted, ex)
                 @test stringify!(fmt) == "{1:s}"
 
-                res, fmt  = escape!(ex, args; outmost=false)
+                res, str, fmt  = escape!(ex, args; outmost=false)
                 @test args == Expr[esc(ex), esc(ex)]
                 @test res == :(ARG[2])
+                @test stringify!(str) == sprint(Base.show_unquoted, ex)
                 @test stringify!(fmt) == "{2:s}"
             end
 
@@ -306,15 +308,17 @@
             ]
             @testset "ex: $ex" for ex in cases
                 args = Expr[]
-                res, fmt  = escape!(ex, args; outmost=true)
-                
+
+                res, str, fmt  = escape!(ex, args; outmost=true)
                 @test args == Expr[esc(ex)]
                 @test res == :(ARG[1])
+                @test stringify!(str) == sprint(Base.show_unquoted, ex)
                 @test stringify!(fmt) == "{1:s}"
 
-                res, fmt = escape!(ex, args; outmost=false)
+                res, str, fmt = escape!(ex, args; outmost=false)
                 @test args == Expr[esc(ex), esc(ex)]
                 @test res == :(ARG[2])
+                @test stringify!(str) == sprint(Base.show_unquoted, ex)
                 @test stringify!(fmt) == "({2:s})"
             end
         end
@@ -323,32 +327,34 @@
             kw = Expr(:kw, :a, 1)
             @testset "kw: $(kw.args[1]) = $(kw.args[2])" begin
                 args = Expr[]
-                res, fmt = escape!(kw, args)
 
+                res, str, fmt = escape!(kw, args)
                 @test args == [esc(:(Ref(1)))]
                 @test res == Expr(:kw, :a, :(ARG[1].x))
+                @test stringify!(str) == "a=1"
                 @test stringify!(fmt) == "a={1:s}"
 
-                res, fmt = escape!(kw, args)
-
+                res, str, fmt = escape!(kw, args)
                 @test args == [esc(:(Ref(1))), esc(:(Ref(1)))]
                 @test res == Expr(:kw, :a, :(ARG[2].x))
+                @test stringify!(str) == "a=1"
                 @test stringify!(fmt) == "a={2:s}"
             end
 
             kw = Expr(:kw, :atol, :(1+TOL))
             @testset "kw: $(kw.args[1]) = $(kw.args[2])" begin
                 args = Expr[]
-                res, fmt = escape!(kw, args)
 
+                res, str, fmt = escape!(kw, args)
                 @test args == [esc(:(Ref(1+TOL)))]
                 @test res == Expr(:kw, :atol, :(ARG[1].x))
+                @test stringify!(str) == "atol=1 + TOL"
                 @test stringify!(fmt) == "atol={1:s}"
 
-                res, fmt = escape!(kw, args)
-
+                res, str, fmt = escape!(kw, args)
                 @test args == [esc(:(Ref(1+TOL))), esc(:(Ref(1+TOL)))]
                 @test res == Expr(:kw, :atol, :(ARG[2].x))
+                @test stringify!(str) == "atol=1 + TOL"
                 @test stringify!(fmt) == "atol={2:s}"
             end
         end
@@ -357,15 +363,17 @@
             ex = :(.!a)
             @testset "ex: $ex" begin
                 args = Expr[]
-                res, fmt = escape!(ex, args; outmost=true)
-                
+
+                res, str, fmt = escape!(ex, args; outmost=true)
                 @test args == Expr[esc(:a)]
                 @test res == Expr(:call, esc(:.!), :(ARG[1]))
+                @test stringify!(str) == ".!a"
                 @test stringify!(fmt) == "!{1:s}"
 
-                res, fmt = escape!(ex, args; outmost=false)
+                res, str, fmt = escape!(ex, args; outmost=false)
                 @test args == Expr[esc(:a), esc(:a)]
                 @test res == Expr(:call, esc(:.!), :(ARG[2]))
+                @test stringify!(str) == ".!a"
                 @test stringify!(fmt) == "!{2:s}"
             end
         end
@@ -374,15 +382,17 @@
             ex = :(a .& b)
             @testset "ex: $ex" begin
                 args = Expr[]
-                res, fmt = escape!(ex, args; outmost=true)
-                
+
+                res, str, fmt = escape!(ex, args; outmost=true)
                 @test args == esc.([:a, :b])
                 @test res == Expr(:call, esc(:.&), :(ARG[1]), :(ARG[2]))
+                @test stringify!(str) == "a .& b"
                 @test stringify!(fmt) == "{1:s} & {2:s}"
 
-                res, fmt = escape!(ex, args; outmost=false)
+                res, str, fmt = escape!(ex, args; outmost=false)
                 @test args == Expr[esc(:a), esc(:b), esc(:a), esc(:b)]
                 @test res == Expr(:call, esc(:.&), :(ARG[3]), :(ARG[4]))
+                @test stringify!(str) == "(a .& b)"
                 @test stringify!(fmt) == "({3:s} & {4:s})"
             end
 
@@ -390,16 +400,18 @@
             @testset "ex: $ex" begin
                 args = Expr[]
 
-                res, fmt = escape!(ex, args; outmost=true)
+                res, str, fmt = escape!(ex, args; outmost=true)
                 @test args == esc.([:a, :b, :c])
                 inner_res = Expr(:call, esc(:.|), :(ARG[1]), :(ARG[2]))
                 @test res == Expr(:call, esc(:.|), inner_res, :(ARG[3]))
+                @test stringify!(str) == "a .| b .| c"
                 @test stringify!(fmt) == "{1:s} | {2:s} | {3:s}"
 
-                res, fmt = escape!(ex, args; outmost=false)
+                res, str, fmt = escape!(ex, args; outmost=false)
                 @test args == esc.([:a, :b, :c, :a, :b, :c])
                 inner_res = Expr(:call, esc(:.|), :(ARG[4]), :(ARG[5]))
                 @test res == Expr(:call, esc(:.|), inner_res, :(ARG[6]))
+                @test stringify!(str) == "(a .| b .| c)"
                 @test stringify!(fmt) == "({4:s} | {5:s} | {6:s})"
             end
 
@@ -407,12 +419,13 @@
             @testset "ex: $ex" begin
                 args = Expr[]
 
-                res, fmt = escape!(ex, args; outmost=true)
+                res, str, fmt = escape!(ex, args; outmost=true)
                 @test args == esc.([:a, :b, :c, :d, :e])
                 inner_res = Expr(:call, esc(:.&), :(ARG[1]), :(ARG[2]))
                 inner_res = Expr(:call, esc(:.⊻), inner_res, :(ARG[3]))
                 inner_res = Expr(:call, esc(:.⊽), inner_res, :(ARG[4]))
                 @test res == Expr(:call, esc(:.|), inner_res, :(ARG[5]))
+                @test stringify!(str) == "a .& b .⊻ c .⊽ d .| e"
                 @test stringify!(fmt) == "{1:s} & {2:s} ⊻ {3:s} ⊽ {4:s} | {5:s}"
             end
 
@@ -420,9 +433,10 @@
             @testset "ex: $ex" begin
                 args = Expr[]
 
-                res, fmt = escape!(ex, args; outmost=true)
+                res, str, fmt = escape!(ex, args; outmost=true)
                 @test args == esc.([:a, :b, :c])
                 @test res == Expr(:call, esc(:.⊽), :(ARG[1]), :(ARG[2]), :(ARG[3]))
+                @test stringify!(str) == "a .⊽ b .⊽ c"
                 @test stringify!(fmt) == "{1:s} ⊽ {2:s} ⊽ {3:s}"
             end
         end
@@ -432,14 +446,16 @@
             @testset "ex: $ex" begin
                 args = Expr[]
 
-                res, fmt = escape!(ex, args; outmost=true)
+                res, str, fmt = escape!(ex, args; outmost=true)
                 @test args == esc.([:a, :b])
                 @test res == Expr(:comparison, :(ARG[1]), esc(:.==), :(ARG[2]))
+                @test stringify!(str) == "a .== b"
                 @test stringify!(fmt) == "{1:s} == {2:s}"
 
-                res, fmt = escape!(ex, args; outmost=false)
+                res, str, fmt = escape!(ex, args; outmost=false)
                 @test args == esc.([:a, :b, :a, :b])
                 @test res == Expr(:comparison, :(ARG[3]), esc(:.==), :(ARG[4]))
+                @test stringify!(str) == "(a .== b)"
                 @test stringify!(fmt) == "({3:s} == {4:s})"
             end
 
@@ -447,9 +463,10 @@
             @testset "ex: $ex" begin
                 args = Expr[]
 
-                res, fmt = escape!(ex, args; outmost=false)
+                res, str, fmt = escape!(ex, args; outmost=false)
                 @test args == esc.([:a, :b, :c])
                 @test res == Expr(:comparison, :(ARG[1]), esc(:.≈), :(ARG[2]), esc(:.>), :(ARG[3]))
+                @test stringify!(str) == "(a .≈ b .> c)"
                 @test stringify!(fmt) == "({1:s} ≈ {2:s} > {3:s})"
             end
 
@@ -457,9 +474,10 @@
             @testset "ex: $ex" begin
                 args = Expr[]
 
-                res, fmt = escape!(ex, args; outmost=true)
+                res, str, fmt = escape!(ex, args; outmost=true)
                 @test args == esc.([:a, :b, :c])
                 @test res == Expr(:comparison, :(ARG[1]), esc(:.<:), :(ARG[2]), esc(:.>:), :(ARG[3]))
+                @test stringify!(str) == "a .<: b .>: c"
                 @test stringify!(fmt) == "{1:s} <: {2:s} >: {3:s}"
             end
         end
@@ -469,18 +487,20 @@
             @testset "ex: $ex" begin
                 args = Expr[]
 
-                res, fmt = escape!(ex, args; outmost=true)
+                res, str, fmt = escape!(ex, args; outmost=true)
                 @test args == esc.([:a, :b, :(Ref(10*TOL))])
                 @test res == Expr(:call, esc(:.≈), 
                                   :(ARG[1]), :(ARG[2]), 
                                   Expr(:kw, :atol, :(ARG[3].x)))
+                @test stringify!(str) == ".≈(a, b, atol=10TOL)"
                 @test stringify!(fmt) == "{1:s} ≈ {2:s} (atol={3:s})"
 
-                res, fmt = escape!(ex, args; outmost=false)
+                res, str, fmt = escape!(ex, args; outmost=false)
                 @test args == esc.([:a, :b, :(Ref(10*TOL)), :a, :b, :(Ref(10*TOL))])
                 @test res == Expr(:call, esc(:.≈), 
                                   :(ARG[4]), :(ARG[5]), 
                                   Expr(:kw, :atol, :(ARG[6].x)))
+                @test stringify!(str) == ".≈(a, b, atol=10TOL)"
                 @test stringify!(fmt) == "≈({4:s}, {5:s}, atol={6:s})"
             end
 
@@ -488,20 +508,22 @@
             @testset "ex: $ex" begin
                 args = Expr[]
 
-                res, fmt = escape!(ex, args; outmost=true)
+                res, str, fmt = escape!(ex, args; outmost=true)
                 @test args == esc.([:a, :b, :(Ref(1)), :(Ref(1))])
                 @test res == Expr(:call, esc(:.≉), 
                                   :(ARG[1]), :(ARG[2]), 
                                   Expr(:kw, :rtol, :(ARG[3].x)), 
                                   Expr(:kw, :atol, :(ARG[4].x)))
+                @test stringify!(str) == ".≉(a, b, rtol=1, atol=1)"
                 @test stringify!(fmt) == "{1:s} ≉ {2:s} (rtol={3:s}, atol={4:s})"
 
-                res, fmt = escape!(ex, args; outmost=false)
+                res, str, fmt = escape!(ex, args; outmost=false)
                 @test args == esc.([:a, :b, :(Ref(1)), :(Ref(1)), :a, :b, :(Ref(1)), :(Ref(1))])
                 @test res == Expr(:call, esc(:.≉), 
                                   :(ARG[5]), :(ARG[6]), 
                                   Expr(:kw, :rtol, :(ARG[7].x)), 
                                   Expr(:kw, :atol, :(ARG[8].x)))
+                @test stringify!(str) == ".≉(a, b, rtol=1, atol=1)"
                 @test stringify!(fmt) == "≉({5:s}, {6:s}, rtol={7:s}, atol={8:s})"
             end
         end
@@ -512,14 +534,16 @@
             @testset "ex: $ex" begin
                 args = Expr[]
 
-                res, fmt = escape!(ex, args; outmost=true)
+                res, str, fmt = escape!(ex, args; outmost=true)
                 @test args == esc.([:a])
                 @test res == Expr(:., esc(:isnan), Expr(:tuple, :(ARG[1])))
+                @test stringify!(str) == "isnan.(a)"
                 @test stringify!(fmt) == "isnan({1:s})"
 
-                res, fmt = escape!(ex, args; outmost=true)
+                res, str, fmt = escape!(ex, args; outmost=true)
                 @test args == esc.([:a, :a])
                 @test res == Expr(:., esc(:isnan), Expr(:tuple, :(ARG[2])))
+                @test stringify!(str) == "isnan.(a)"
                 @test stringify!(fmt) == "isnan({2:s})"
             end
 
@@ -527,14 +551,16 @@
             @testset "ex: $ex" begin
                 args = Expr[]
 
-                res, fmt = escape!(ex, args; outmost=true)
+                res, str, fmt = escape!(ex, args; outmost=true)
                 @test args == esc.([:(Ref(1))])
                 @test res == Expr(:., esc(:isnan), Expr(:tuple, Expr(:kw, :a, :(ARG[1].x))))
+                @test stringify!(str) == "isnan.(a=1)"
                 @test stringify!(fmt) == "isnan(a={1:s})"
 
-                res, fmt = escape!(ex, args; outmost=false)
+                res, str, fmt = escape!(ex, args; outmost=false)
                 @test args == esc.([:(Ref(1)), :(Ref(1))])
                 @test res == Expr(:., esc(:isnan), Expr(:tuple, Expr(:kw, :a, :(ARG[2].x))))
+                @test stringify!(str) == "isnan.(a=1)"
                 @test stringify!(fmt) == "isnan(a={2:s})"
             end
 
@@ -542,14 +568,16 @@
             @testset "ex: $ex" begin
                 args = Expr[]
 
-                res, fmt = escape!(ex, args; outmost=true)
+                res, str, fmt = escape!(ex, args; outmost=true)
                 @test args == esc.([])
                 @test res == Expr(:., esc(:isnan), Expr(:tuple))
+                @test stringify!(str) == "isnan.()"
                 @test stringify!(fmt) == "isnan()"
 
-                res, fmt = escape!(ex, args; outmost=false)
+                res, str, fmt = escape!(ex, args; outmost=false)
                 @test args == esc.([])
                 @test res == Expr(:., esc(:isnan), Expr(:tuple))
+                @test stringify!(str) == "isnan.()"
                 @test stringify!(fmt) == "isnan()"
             end
 
@@ -557,14 +585,16 @@
             @testset "ex: $ex" begin
                 args = Expr[]
 
-                res, fmt = escape!(ex, args; outmost=true)
+                res, str, fmt = escape!(ex, args; outmost=true)
                 @test args == esc.([:a, :b, :(Ref(1))])
                 @test res == Expr(:., esc(:isapprox), Expr(:tuple, :(ARG[1]), :(ARG[2]), Expr(:kw, :atol, :(ARG[3].x))))
+                @test stringify!(str) == "isapprox.(a, b, atol=1)"
                 @test stringify!(fmt) == "isapprox({1:s}, {2:s}, atol={3:s})"
 
-                res, fmt = escape!(ex, args; outmost=false)
+                res, str, fmt = escape!(ex, args; outmost=false)
                 @test args == esc.([:a, :b, :(Ref(1)), :a, :b, :(Ref(1))])
                 @test res == Expr(:., esc(:isapprox), Expr(:tuple, :(ARG[4]), :(ARG[5]), Expr(:kw, :atol, :(ARG[6].x))))
+                @test stringify!(str) == "isapprox.(a, b, atol=1)"
                 @test stringify!(fmt) == "isapprox({4:s}, {5:s}, atol={6:s})"
 
             end
@@ -573,9 +603,10 @@
             @testset "ex: $ex" begin
                 args = Expr[]
 
-                res, fmt = escape!(ex, args; outmost=true)
+                res, str, fmt = escape!(ex, args; outmost=true)
                 @test args == esc.([:a, :b, :(Ref(1)), :(Ref(1))])
                 @test res == Expr(:., esc(:isapprox), Expr(:tuple, :(ARG[1]), :(ARG[2]), Expr(:kw, :atol, :(ARG[3].x)), Expr(:kw, :rtol, :(ARG[4].x))))
+                @test stringify!(str) == "isapprox.(a, b, atol=1, rtol=1)"
                 @test stringify!(fmt) == "isapprox({1:s}, {2:s}, atol={3:s}, rtol={4:s})"
             end
 
@@ -586,7 +617,7 @@
             @testset "ex: $ex" begin
                 args = Expr[]
 
-                res, fmt = escape!(ex, args; outmost=true)
+                res, str, fmt = escape!(ex, args; outmost=true)
                 @test args == esc.([:a, :(f.(b)), :x, :y, :z, :(Ref(TOL))])
                 inner_res1 = :(ARG[1])
                 inner_res2 = Expr(:call, esc(:.&), inner_res1, :(ARG[2]))
@@ -594,8 +625,73 @@
                 inner_res4 = Expr(:call, esc(:.&), inner_res2, inner_res3)
                 inner_res5 = Expr(:call, esc(:.≈), :(ARG[4]), :(ARG[5]), Expr(:kw, :atol, :(ARG[6].x)))
                 @test res == Expr(:call, esc(:.&), inner_res4, inner_res5)
+                @test stringify!(str) == "a .& f.(b) .& .!isnan.(x) .& .≈(y, z, atol=TOL)"
                 @test stringify!(fmt) == "{1:s} & {2:s} & !isnan({3:s}) & ≈({4:s}, {5:s}, atol={6:s})"
             end
+        end
+
+        @testset "styling" begin
+            f = ex -> begin
+                args = Expr[]
+                _, str, fmt = TM.recurse_process!(ex, args; outmost=true)
+                TM.stringify!(str), TM.stringify!(fmt)
+            end
+
+            TM.enable_failure_styling()
+
+            # Base case
+            str, fmt = f(:(a))
+            @test occursin(ansire("\ea\e"), str)
+            @test occursin(ansire("\e{1:s}\e"), fmt)
+            str, fmt = f(:(a .+ b))
+            @test occursin(ansire("\ea \\.\\+ b\e"), str)
+            @test occursin(ansire("\e{1:s}\e"), fmt)
+            str, fmt = f(:(g.(x, a=1)))
+            @test occursin(ansire("\eg\\.\\(x, a = 1\\)\e"), str)
+            @test occursin(ansire("\e{1:s}\e"), fmt)
+            str, fmt = f(:([1,2,3]))
+            @test occursin(ansire("\e\\[1, 2, 3\\]\e"), str)
+            @test occursin(ansire("\e{1:s}\e"), fmt)
+            
+            # keywords
+            str, fmt = f(Expr(:kw, :a, 1))
+            @test occursin(ansire("a=\e1\e"), str)
+            @test occursin(ansire("a=\e{1:s}\e"), fmt)
+            str, fmt = f(Expr(:kw, :atol, :(1+TOL)))
+            @test occursin(ansire("atol=\e1 \\+ TOL\e"), str)
+            @test occursin(ansire("atol=\e{1:s}\e"), fmt)
+
+            # negation
+            str, fmt = f(:(.!a))
+            @test occursin(ansire("\\.!\ea\e"), str)
+
+            # logical
+            str, fmt = f(:(a .& b))
+            @test occursin(ansire("\ea\e \\.& \eb\e"), str)
+            @test occursin(ansire("\e{1:s}\e & \e{2:s}\e"), fmt)
+            str, fmt = f(:(a .| b .⊻ c))
+            @test occursin(ansire("\ea\e \\.| \eb\e .⊻ \ec\e"), str)
+            @test occursin(ansire("\e{1:s}\e | \e{2:s}\e ⊻ \e{3:s}\e"), fmt)
+
+            # comparison
+            str, fmt = f(:(a .& b .| c))
+            @test occursin(ansire("\ea\e \\.& \eb\e \\.| \ec\e"), str)
+            @test occursin(ansire("\e{1:s}\e & \e{2:s}\e | \e{3:s}\e"), fmt)
+
+            # approx
+            str, fmt = f(:(.≈(a, b, atol=10*TOL)))
+            @test occursin(ansire("\\.≈\\(\ea\e, \eb\e, atol=\e10TOL\e\\)"), str)
+            @test occursin(ansire("\e{1:s}\e ≈ \e{2:s}\e \\(atol=\e{3:s}\e\\)"), fmt)
+
+            # displayable function
+            str, fmt = f(:(isnan.(x)))
+            @test occursin(ansire("isnan\\.\\(\ex\e\\)"), str)
+            @test occursin(ansire("isnan\\(\e{1:s}\e\\)"), fmt)
+            str, fmt = f(:(isnan.(x, a=1)))
+            @test occursin(ansire("isnan\\.\\(\ex\e, a=\e1\e\\)"), str)
+            @test occursin(ansire("isnan\\(\e{1:s}\e, a=\e{2:s}\e\\)"), fmt)
+
+            TM.disable_failure_styling()
         end
     end
 
@@ -852,7 +948,7 @@
                     a = [1,NaN,3]
                     @test_all .!isnan.(a)
                     push!(messages, [
-                        "Expression: all(.!(isnan.(a)))",
+                        "Expression: all(.!isnan.(a))",
                         "Evaluated: false",
                         "Argument: 3-element BitVector, 1 failure:",
                         "[2]: !isnan(NaN) ===> false",
@@ -862,7 +958,7 @@
                     a = [0.9, 1.0, 1.1]
                     @test_all a .≈ 1 atol=1e-2
                     push!(messages, [
-                        "Expression: all(.≈(a, 1, atol = 0.01))",
+                        "Expression: all(.≈(a, 1, atol=0.01))",
                         "Evaluated: false",
                         "Argument: 3-element BitVector, 2 failures:",
                         "[1]: 0.9 ≈ 1 (atol=0.01) ===> false",
@@ -904,12 +1000,11 @@
                         "Argument: 1 == missing ===> missing",
                     ])
                 end
-
                 
                 @testset "ex[$i]: $(fail.orig_expr)" for (i, fail) in enumerate(fails)
                     @test fail isa Test.Fail
                     @test fail.test_type === :test
-                    str = destyle(sprint(show, fail))
+                    str = sprint(show, fail)
                     for msg in messages[i]
                         @test contains(str, msg)
                     end

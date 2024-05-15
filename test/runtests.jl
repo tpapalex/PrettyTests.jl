@@ -9,5 +9,5 @@ TM.disable_failure_styling() # Will be enabled for some tests, but mostly don't 
 
     include("helpers.jl")
     include("test_sets.jl")
-    # include("test_all.jl")
+    include("test_all.jl")
 end

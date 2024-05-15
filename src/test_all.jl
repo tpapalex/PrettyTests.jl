@@ -225,18 +225,18 @@ end
 function stringify!(fmt::Formatter)
     str = stringify!(fmt.ioc)
     if fmt.parens 
-        return "($s)"
+        return "($str)"
     else
         return str
     end
 end
 
-function Base.print(fmt::Formatter, i::Integer)
-    printstyled(fmt.ioc, "{$i:s}", color=get_color(i))
-end
-
-function Base.print(fmt::Formatter, strs::AbstractString...)
-    print(fmt.ioc, strs...)
+function Base.print(fmt::Formatter, strs::AbstractString...; i::Integer=0)
+    if i == 0
+        print(fmt.ioc, strs...)
+    else
+        printstyled(fmt.ioc, strs..., color=get_color(i))
+    end
 end
 
 function Base.print(fmt::Formatter, innerfmt::Formatter)
@@ -244,8 +244,8 @@ function Base.print(fmt::Formatter, innerfmt::Formatter)
     close(innerfmt.ioc)
 end
 
-function Base.print(fmt::Formatter, s)
-    print(fmt.ioc, string(s))
+function Base.print(fmt::Formatter, s; i::Integer=0)
+    print(fmt, string(s); i=i)
 end
 
 # Commonly used indentation levels for pretty printing
@@ -365,7 +365,7 @@ end
 # references to `ARG[i]` in the `ex` itself. It does the same with keyword arguments
 # but wraps them in `Ref()` before escaping. It also recursively produces a 
 # `Formatter` object for pretty-printing the broadcasted arguments.
-function recurse_process!(ex, escargs::Vector{Expr}; outmost::Bool=true)
+function recurse_process!(ex, escargs::Vector{Expr}; outmost::Bool=false)
     ex = preprocess_test_all(ex)
     if isexpr(ex, :kw)
         return recurse_process_keyword!(ex, escargs, outmost=outmost)
@@ -384,185 +384,182 @@ function recurse_process!(ex, escargs::Vector{Expr}; outmost::Bool=true)
     end
 end
 
-function recurse_process_basecase!(ex, escargs::Vector{Expr}; outmost::Bool=true)
+function recurse_process_basecase!(ex, escargs::Vector{Expr}; outmost::Bool=false)
     # Escape entire expression to args
     push!(escargs, esc(ex))
 
-    # Override parentheses if expression doesn't need them
+    # Override parentheses if expression doesn't need them. 
+    # TODO: probably some unnecessary parens here, may want to look at Base.show_unquoted
     addparens = !outmost
     if !isa(ex, Expr) || 
         ex.head ∈ (:vect, :tuple, :hcat, :vcat, :ref) || 
-        (isexpr(ex, (:call, :.)) && Base.operator_precedence(ex.args[1]) == 0)
+        (isexpr(ex, (:call, :.)) && Base.operator_precedence(ex.args[1]) == 0) || 
+        (isexpr(ex, :call) && ex.args[1] == :(:))
 
         addparens = false
     end
 
     # Create a simple format string
-    fmt_expr = Formatter(addparens)
-    fmt_term = Formatter(addparens)
-    print(fmt_expr, length(escargs))
-    print(fmt_term, length(escargs))
+    str = Formatter(false) # rely on Base.show_unquoted
+    fmt = Formatter(addparens)
+    print(str, sprint(Base.show_unquoted, ex), i=length(escargs))
+    print(fmt, "{$(length(escargs)):s}", i=length(escargs))
 
     # Replace the expression with ARG[i]
     ex = :(ARG[$(length(escargs))])
-    return ex, fmt_expr, fmt_term
+    return ex, str, fmt
 end
 
-function recurse_process_keyword!(ex::Expr, escargs::Vector{Expr}; outmost::Bool=true)
+function recurse_process_keyword!(ex::Expr, escargs::Vector{Expr}; outmost::Bool=false)
     # Keyword argument values are pushed to escaped `args`, but should be
     # wrapped in a Ref() call to avoid broadcasting.
     push!(escargs, esc(Expr(:call, :Ref, ex.args[2])))
 
-    fmt_expr = Formatter(false)
-    print(fmt_expr, ex.args[1])
-    print(fmt_expr, "=")
-    print(fmt_expr, length(escargs))
+    str = Formatter(false)
+    print(str, ex.args[1])
+    print(str, "=")
+    print(str, sprint(Base.show_unquoted, ex.args[2]), i=length(escargs))
 
-    fmt_term = Formatter(false)
-    print(fmt_term, ex.args[1])
-    print(fmt_term, "=")
-    print(fmt_term, length(escargs))
+    fmt = Formatter(false)
+    print(fmt, ex.args[1])
+    print(fmt, "=")
+    print(fmt, "{$(length(escargs)):s}", i=length(escargs))
 
     # Replace keyword argument with ARG[i].x to un-Ref() in evaluation
     ex.args[2] = :(ARG[$(length(escargs))].x)
     
-    return ex, fmt_expr, fmt_term
+    return ex, str, fmt
 end
 
-function recurse_process_negation!(ex::Expr, escargs::Vector{Expr}; outmost::Bool=true)
+function recurse_process_negation!(ex::Expr, escargs::Vector{Expr}; outmost::Bool=false)
     # Recursively update the second argument
-    ex.args[2], fmt_expr_arg, fmt_term_arg = recurse_process!(ex.args[2], escargs)
+    ex.args[2], str_arg, fmt_arg = recurse_process!(ex.args[2], escargs)
 
     # Never requires parentheses outside the negation
-    fmt_expr = Formatter(false)
-    print(fmt_expr, ex.args[1])
-    print(fmt_expr, fmt_expr_arg)
-    fmt_term = Formatter(false)
-    print(fmt_term, "!")
-    print(fmt_term, fmt_term_arg)
+    str = Formatter(false)
+    print(str, ex.args[1])
+    print(str, str_arg)
+    fmt = Formatter(false)
+    print(fmt, "!")
+    print(fmt, fmt_arg)
 
     # Escape negation operator
     ex.args[1] = esc(ex.args[1])
 
-    return ex, fmt_expr, fmt_term
+    return ex, str, fmt
 end
 
-function recurse_process_logical!(ex::Expr, escargs::Vector{Expr}; outmost::Bool=true)
-    fmt_expr = Formatter(!outmost)
-    fmt_term = Formatter(!outmost)
+function recurse_process_logical!(ex::Expr, escargs::Vector{Expr}; outmost::Bool=false)
+    str = Formatter(!outmost)
+    fmt = Formatter(!outmost)
 
     for i in 2:length(ex.args)
         # Recursively update the two arguments. If a sub-expression is also logical, 
         # there is no need to parenthesize so consider it `outmost=true`.
-        ex.args[i], fmt_expr_arg, fmt_term_arg = recurse_process!(
+        ex.args[i], str_arg, fmt_arg = recurse_process!(
             ex.args[i], escargs, outmost=isveclogicalexpr(ex.args[i]))
 
         # Unless it's the first argument, print the operator
-        i == 2 || print(fmt_expr, " ", string(ex.args[1]), " ")
-        i == 2 || print(fmt_term, " ", string_unvec(ex.args[1]), " ")
-        print(fmt_expr, fmt_expr_arg)
-        print(fmt_term, fmt_term_arg)
+        i == 2 || print(str, " ", string(ex.args[1]), " ")
+        i == 2 || print(fmt, " ", string_unvec(ex.args[1]), " ")
+        print(str, str_arg)
+        print(fmt, fmt_arg)
     end
 
     # Escape the operator
     ex.args[1] = esc(ex.args[1])
 
-    return ex, fmt_expr, fmt_term
+    return ex, str, fmt
 end
 
 function recurse_process_comparison!(ex::Expr, escargs::Vector{Expr}; outmost::Bool=false)
-    fmt_expr = Formatter(!outmost)
-    fmt_term = Formatter(!outmost)
+    str = Formatter(!outmost)
+    fmt = Formatter(!outmost)
     # Recursively update every other argument (i.e. the terms), and 
     # escape the operators.
     for i in eachindex(ex.args)
         if i % 2 == 1 # Term
-            ex.args[i], fmt_expr_arg, fmt_term_arg = recurse_process!(ex.args[i], escargs)
-            print(fmt_expr, fmt_expr_arg)
-            print(fmt_term, fmt_term_arg)
+            ex.args[i], str_arg, fmt_arg = recurse_process!(ex.args[i], escargs)
+            print(str, str_arg)
+            print(fmt, fmt_arg)
         else # Operator
-            print(fmt_expr, " ", string(ex.args[i]), " ")
-            print(fmt_term, " ", string_unvec(ex.args[i]), " ")
+            print(str, " ", string(ex.args[i]), " ")
+            print(fmt, " ", string_unvec(ex.args[i]), " ")
             ex.args[i] = esc(ex.args[i])
         end
     end
     
-    return ex, fmt_expr, fmt_term
+    return ex, str, fmt
 end
 
 function recurse_process_approx!(ex::Expr, escargs::Vector{Expr}; outmost::Bool=false)
     # Recursively update both positional arguments
-    ex.args[2], fmt_expr_arg1, fmt_term_arg1 = recurse_process!(ex.args[2], escargs)
-    ex.args[3], fmt_expr_arg2, fmt_term_arg2 = recurse_process!(ex.args[3], escargs)
+    ex.args[2], str_arg2, fmt_arg2 = recurse_process!(ex.args[2], escargs)
+    ex.args[3], str_arg3, fmt_arg3 = recurse_process!(ex.args[3], escargs)
 
     # If outmost, format as comparison, otherwise as a function call
-    fmt_expr = Formatter(false)
-    fmt_term = Formatter(false)
+    str = Formatter(false)
+    print(str, string(ex.args[1]))
+    print(str, "(")
+    print(str, str_arg2)
+    print(str, ", ")
+    print(str, str_arg3)
+    print(str, ", ")
+
+    fmt = Formatter(false)
     if outmost
-        print(fmt_expr, fmt_expr_arg1)
-        print(fmt_expr, " ", string(ex.args[1]), " ")
-        print(fmt_expr, fmt_expr_arg2)
-        print(fmt_expr, " (")
-
-        print(fmt_term, fmt_term_arg1)
-        print(fmt_term, " ", string_unvec(ex.args[1]), " ")
-        print(fmt_term, fmt_term_arg2)
-        print(fmt_term, " (")
+        print(fmt, fmt_arg2)
+        print(fmt, " ", string_unvec(ex.args[1]), " ")
+        print(fmt, fmt_arg3)
+        print(fmt, " (")
     else
-        print(fmt_expr, string(ex.args[1]))
-        print(fmt_expr, "(")
-        print(fmt_expr, fmt_expr_arg1)
-        print(fmt_expr, ", ")
-        print(fmt_expr, fmt_expr_arg2)
-        print(fmt_expr, ", ")
-
-        print(fmt_term, string_unvec(ex.args[1]))
-        print(fmt_term, "(")
-        print(fmt_term, fmt_term_arg1)
-        print(fmt_term, ", ")
-        print(fmt_term, fmt_term_arg2)
-        print(fmt_term, ", ")
+        print(fmt, string_unvec(ex.args[1]))
+        print(fmt, "(")
+        print(fmt, fmt_arg2)
+        print(fmt, ", ")
+        print(fmt, fmt_arg3)
+        print(fmt, ", ")
     end
 
     # Recursively update with keyword arguments
     for i in 4:length(ex.args)
-        ex.args[i], fmt_expr_arg, fmt_term_arg = recurse_process!(ex.args[i], escargs)
-        print(fmt_expr, fmt_expr_arg)
-        print(fmt_term, fmt_term_arg)
-        i == length(ex.args) || print(fmt_expr, ", ")
-        i == length(ex.args) || print(fmt_term, ", ")
+        ex.args[i], str_arg, fmt_arg = recurse_process!(ex.args[i], escargs)
+        print(str, str_arg)
+        print(fmt, fmt_arg)
+        i == length(ex.args) || print(str, ", ")
+        i == length(ex.args) || print(fmt, ", ")
     end
-    print(fmt_expr, ")")
-    print(fmt_term, ")")
+    print(str, ")")
+    print(fmt, ")")
 
     # Escape function
     ex.args[1] = esc(ex.args[1])
 
-    return ex, fmt_expr, fmt_term
+    return ex, str, fmt
 end
 
 function recurse_process_displayfunc!(ex::Expr, escargs::Vector{Expr}; outmost::Bool=false)
     ex_args = ex.args[2].args
 
-    fmt_expr = Formatter(false)
-    fmt_term = Formatter(false)
+    str = Formatter(false)
+    fmt = Formatter(false)
 
-    print(fmt_expr, string(ex.args[1]), ".(")
-    print(fmt_term, string(ex.args[1]), "(")
+    print(str, string(ex.args[1]), ".(")
+    print(fmt, string(ex.args[1]), "(")
     for i in eachindex(ex_args)
-        ex_args[i], fmt_expr_arg, fmt_term_arg = recurse_process!(ex_args[i], escargs)
-        print(fmt_expr, fmt_expr_arg)
-        print(fmt_term, fmt_term_arg)
-        i == length(ex_args) || print(fmt_expr, ", ")
-        i == length(ex_args) || print(fmt_term, ", ")
+        ex_args[i], str_arg, fmt_arg = recurse_process!(ex_args[i], escargs)
+        print(str, str_arg)
+        print(fmt, fmt_arg)
+        i == length(ex_args) || print(str, ", ")
+        i == length(ex_args) || print(fmt, ", ")
     end
-    print(fmt_expr, ")")
-    print(fmt_term, ")")
+    print(str, ")")
+    print(fmt, ")")
 
     # Escape the function name
     ex.args[1] = esc(ex.args[1])
 
-    return ex, fmt_expr, fmt_term
+    return ex, str, fmt
 end
 
 # Internal function used at `@test_all` runtime to get a `Returned` `Test.ExecutionResult`
@@ -616,16 +613,14 @@ function eval_test_all(
     io = failure_ioc()
     print(io, res)
     print(io, "\n    Argument: ")
-    multiple_terms = length(terms) > 1
 
     # Print a nice message. If the evaluated result (evaled) is a Bool or Missing (not 
     # a vector or array), print a simple message:
     if isa(evaled, Union{Bool,Missing})
         terms = repr.(first(broadcasted_terms))
         printfmt(io, fmt, terms...)
-        if multiple_terms
-            printstyled(io, " ===> ", evaled, color=:light_yellow)
-        end
+        printstyled(io, " ===> ", evaled, color=:light_yellow)
+
 
     # Otherwise, use pretty-printing with indices. Note that we are guaranteed that 
     # eltype(evaled) <: Union{Missing,Bool}. 
@@ -660,9 +655,7 @@ function eval_test_all(
 
         print_idx_message = (io, idx) -> begin
             printfmt(io, fmt, repr.(broadcasted_terms[idx])...)
-            if multiple_terms
-                printstyled(io, " ===> ", evaled[idx], color=:light_yellow)
-            end
+            printstyled(io, " ===> ", evaled[idx], color=:light_yellow)
         end
         print_failures(io, idxs, print_idx_message, _INDENT_EVALUATED)
     end
@@ -675,12 +668,8 @@ end
 # so that exceptions can be returned as `Test.Threw` result.
 function get_test_all_result(ex, source)
     escaped_args = Expr[]
-    mod_ex, fmt_expr, fmt_term = recurse_process!(ex, escaped_args; outmost=true)
-
-    # Get color-coded expression by passing the unescaped arguments:
-    fmt_expr = FormatExpr("all(" * stringify!(fmt_expr) * ")")
-    str_args = map(a -> sprint(Base.show_unquoted, a.args[1]), escaped_args)
-    str_ex = sprint(printfmt, fmt_expr, str_args..., context = :color => true)
+    mod_ex, str, fmt = recurse_process!(ex, escaped_args; outmost=true)
+    str, fmt = stringify!(str), stringify!(fmt)
 
     result = quote
         try
@@ -688,7 +677,7 @@ function get_test_all_result(ex, source)
                 eval_test_all(
                     $(mod_ex), 
                     ARG, 
-                    $(stringify!(fmt_term)),
+                    $(fmt),
                     $(QuoteNode(source))
                 )
             end
@@ -698,7 +687,7 @@ function get_test_all_result(ex, source)
         end
     end
 
-    return result, str_ex
+    return result, str
 end
 
 """
@@ -756,6 +745,7 @@ macro test_all(ex, kws...)
 
     # Generate code to evaluate expression and return a `Test.ExecutionResult`
     result, str_ex = get_test_all_result(ex, __source__)
+    str_ex = "all($str_ex)"
 
     result = quote
         if $(length(skip) > 0 && esc(skip[1]))
