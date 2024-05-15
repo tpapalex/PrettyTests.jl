@@ -23,65 +23,23 @@ const OPS_SETCOMP_CONVERTER = Dict(
 #################### Pretty printing utilities ###################
 const _INDENT_SETOP = "              "; # Match indentation of @test "Evaluated: " line
 
-# ANSI color codes for pretty printing.
-const LCOLOR = Ref{Symbol}(:cyan)
-const RCOLOR = Ref{Symbol}(:magenta)
-
-# Various internal utilities for color-printing expressions with "(L)" and "(R)".
-function printL(
-        io::IO, 
-        L::AbstractString="L", 
-        suffixes::AbstractString...
-    ) 
-    printstyled(io, L, color=LCOLOR[], bold=true)
-    print(io, suffixes...)
-end
-
-function printR(
-        io::IO, 
-        R::AbstractString="R", 
-        suffixes::AbstractString...
-    )
-    printstyled(io, R, color=RCOLOR[], bold=true)
-    print(io, suffixes...)
-end
-
 function printLsepR(
         io::IO, 
         L::AbstractString, 
         sep::AbstractString, 
         R::AbstractString, 
-        suffixes::AbstractString...;
-        space::Bool = true
+        suffixes::AbstractString...
     ) 
-    printL(io, L)
-    space && print(io, " ")
+    printstyled(io, L, " ", color=EXPRESSION_COLORS[1])
     print(io, sep)
-    space && print(io, " ")
-    printR(io, R)
+    printstyled(io, " ", R, color=EXPRESSION_COLORS[2])
     print(io, suffixes...)
 end
 
-function printRsepL(
-        io::IO, 
-        R::AbstractString, 
-        sep::AbstractString, 
-        L::AbstractString,
-        suffixes::AbstractString...;
-        space::Bool = true
-    )
-    printR(io, R)
-    space && print(io, " ")
-    print(io, sep)
-    space && print(io, " ")
-    printL(io, L)
-    print(io, suffixes...)
-end
-
-const LminusR = sprint(printLsepR, "L", "∖", "R", context = :color => false)
-const RminusL = sprint(printRsepL, "R", "∖", "L", context = :color => false)
-const LequalR = sprint(printLsepR, "L", "=", "R", context = :color => false)
-const LintersectR = sprint(printLsepR, "L", "∩", "R", context = :color => false)
+const LminusR     = "L ∖ R"
+const RminusL     = "R ∖ L"
+const LequalR     = "L = R"
+const LintersectR = "L ∩ R"
 
 # Print a set or vector compactly, with a description:
 function printset(io::IO, v::Union{AbstractVector, AbstractSet}, desc::AbstractString)
@@ -89,8 +47,7 @@ function printset(io::IO, v::Union{AbstractVector, AbstractSet}, desc::AbstractS
     print(io, "\n", _INDENT_SETOP)
     print(io, desc)
     print(io, " has ", n, " element", n == 1 ? ":  " : "s: ")
-    io_compact = IOContext(io, :compact => true, :limit => true, :typeinfo => typeof(v))
-    Base.show_vector(io_compact, v)
+    Base.show_vector(io, v)
 end
 
 function printset(io::IO, v, desc::AbstractString)
@@ -101,15 +58,16 @@ end
 # `Evaluated: ` line.
 function stringify_expr_test_sets(ex)
     suffix = ex.args[1] === :∩ ? " == ∅" : ""
-    
-    return sprint(printLsepR, 
-                  sprint(Base.show_unquoted, ex.args[2]),
-                  sprint(Base.show_unquoted, ex.args[1]),
-                  sprint(Base.show_unquoted, ex.args[3]),
-                  suffix, 
-                  context = :color => true)
+    str = sprint(
+        printLsepR, 
+        sprint(Base.show_unquoted, ex.args[2]),
+        sprint(Base.show_unquoted, ex.args[1]),
+        sprint(Base.show_unquoted, ex.args[3]),
+        suffix, 
+        context = :color => STYLED_FAILURES[]
+    )
+    return str
 end
-
 
 #################### Evaluating @test_sets ###################
 
@@ -162,51 +120,50 @@ function eval_test_sets(L, op, R, source)
 
     # If the result is false, create a custom failure message depending on the operator:
     if res === false
-        io = IOBuffer()
-        ioc = IOContext(io, :color => true)
+        io = failure_ioc()
 
         if op === :(==) # issetequal(L, R)
-            printLsepR(ioc, "L", "and", "R", " are not equal.")
-            printset(ioc, setdiff(L, R), LminusR)
-            printset(ioc, setdiff(R, L), RminusL)
+            printLsepR(io, "L", "and", "R", " are not equal.")
+            printset(io, setdiff(L, R), LminusR)
+            printset(io, setdiff(R, L), RminusL)
 
         elseif op === :!= || op === :≠ # !issetequal(L, R)
-            printLsepR(ioc, "L", "and", "R", " are equal.")
-            printset(ioc, intersect(L, R), LequalR)
+            printLsepR(io, "L", "and", "R", " are equal.")
+            printset(io, intersect(L, R), LequalR)
 
         elseif op === :⊆  # issubset(L, R)
-            printLsepR(ioc, "L", "is not a subset of", "R", ".")
-            printset(ioc, setdiff(L, R), LminusR)
+            printLsepR(io, "L", "is not a subset of", "R", ".")
+            printset(io, setdiff(L, R), LminusR)
 
         elseif op === :⊇ # issubset(R, L)
-            printLsepR(ioc, "L", "is not a superset of", "R", ".")
-            printset(ioc, setdiff(R, L), RminusL)
+            printLsepR(io, "L", "is not a superset of", "R", ".")
+            printset(io, setdiff(R, L), RminusL)
 
         elseif op === :⊊ && issetequal(L, R) # L ⊊ R (failure b/c not *proper* subset)
-            printLsepR(ioc, "L", "is not a proper subset of", "R", ", it is equal.")
-            printset(ioc, intersect(L, R), LequalR)
+            printLsepR(io, "L", "is not a proper subset of", "R", ", it is equal.")
+            printset(io, intersect(L, R), LequalR)
 
         elseif op === :⊊ # L ⊊ R (failure because L has extra elements)
-            printLsepR(ioc, "L", "is not a proper subset of", "R", ".")
-            printset(ioc, setdiff(L, R), LminusR)
+            printLsepR(io, "L", "is not a proper subset of", "R", ".")
+            printset(io, setdiff(L, R), LminusR)
 
         elseif op === :⊋ && issetequal(L, R) # L ⊋ R (failure b/c not *proper* superset)
-            printLsepR(ioc, "L", "is not a proper superset of", "R", ", it is equal.")
-            printset(ioc, intersect(L, R), LequalR)
+            printLsepR(io, "L", "is not a proper superset of", "R", ", it is equal.")
+            printset(io, intersect(L, R), LequalR)
 
         elseif op === :⊋ # L ⊋ R (failure because R has extra elements)
-            printLsepR(ioc, "L", "is not a proper superset of", "R", ".")
-            printset(ioc, setdiff(R, L), RminusL)
+            printLsepR(io, "L", "is not a proper superset of", "R", ".")
+            printset(io, setdiff(R, L), RminusL)
 
         elseif op === :∩ # isdisjoint(L, R)
-            printLsepR(ioc, "L", "and", "R", " are not disjoint.")
-            printset(ioc, intersect(L, R), LintersectR)
+            printLsepR(io, "L", "and", "R", " are not disjoint.")
+            printset(io, intersect(L, R), LintersectR)
 
         else
             error("Unsupported operator $op.")
         end
 
-        return Returned(res, String(take!(io)), source)
+        return Returned(res, stringify!(io), source)
 
     else # res === true
         return Returned(res, nothing, source)

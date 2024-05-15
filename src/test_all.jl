@@ -27,7 +27,7 @@ const OPS_LOGICAL = (:.&, :.|, :.⊻, :.⊽)
 const OPS_APPROX = (:.≈, :.≉)  
 
 # A reference value for the max number of failures to print in a @testall failure.
-const MAX_PRINT_FAILURES = Ref{Int64}(10)
+const PRINT_FAILURES_MAX = Ref{Int64}(10)
 
 """
     set_max_print_failures(n::Union{Integer,Nothing}=10)
@@ -60,14 +60,14 @@ Test Failed at none:1
 """
 function set_max_print_failures(n::Integer = 10)
     @assert n >= 0 "Max number of failures to print must be non-negative."
-    MAX_PRINT_FAILURES[] = n
+    PRINT_FAILURES_MAX[] = n
 end
 function set_max_print_failures(::Nothing)
-    MAX_PRINT_FAILURES[] = typemax(Int64)
+    PRINT_FAILURES_MAX[] = typemax(Int64)
     return
 end
 
-get_max_print_failures() = MAX_PRINT_FAILURES[]
+get_max_print_failures() = PRINT_FAILURES_MAX[]
 
 #################### Pre-processing expressions ###################
 # Checks if an operator symbol is vectorized
@@ -217,35 +217,35 @@ end
 # string representation of the unvectorized @testall expression, used to pretty print
 # individual failures.
 struct Formatter
-    io::IOBuffer
+    ioc::IOContext{IOBuffer}
     parens::Bool
-    Formatter(parens::Bool=true) = new(IOBuffer(), parens)
+    Formatter(parens::Bool=true) = new(failure_ioc(), parens)
 end
 
 function stringify!(fmt::Formatter)
-    str = String(take!(fmt.io))
+    str = stringify!(fmt.ioc)
     if fmt.parens 
-        return "($str)"
+        return "($s)"
     else
         return str
     end
 end
 
 function Base.print(fmt::Formatter, i::Integer)
-    print(fmt.io, "{$i:s}")
+    printstyled(fmt.ioc, "{$i:s}", color=get_color(i))
 end
 
 function Base.print(fmt::Formatter, strs::AbstractString...)
-    print(fmt.io, strs...)
+    print(fmt.ioc, strs...)
 end
 
 function Base.print(fmt::Formatter, innerfmt::Formatter)
-    print(fmt.io, stringify!(innerfmt))
-    close(innerfmt.io)
+    print(fmt.ioc, stringify!(innerfmt))
+    close(innerfmt.ioc)
 end
 
 function Base.print(fmt::Formatter, s)
-    print(fmt.io, string(s))
+    print(fmt.ioc, string(s))
 end
 
 # Commonly used indentation levels for pretty printing
@@ -274,11 +274,11 @@ function print_failures(
         prefix=""
     )
 
-    # Depending on MAX_PRINT_FAILURES, filter the indices to some subset.
-    MAX_PRINT_FAILURES[] == 0 && return
-    if length(idxs) > MAX_PRINT_FAILURES[]
-        i_dots = (MAX_PRINT_FAILURES[] ÷ 2)
-        if MAX_PRINT_FAILURES[] % 2 == 1
+    # Depending on PRINT_FAILURES_MAX, filter the indices to some subset.
+    PRINT_FAILURES_MAX[] == 0 && return
+    if length(idxs) > PRINT_FAILURES_MAX[]
+        i_dots = (PRINT_FAILURES_MAX[] ÷ 2)
+        if PRINT_FAILURES_MAX[] % 2 == 1
             i_dots = i_dots + 1
             idxs = idxs[[1:i_dots; end-i_dots+2:end]]
         else
@@ -311,20 +311,21 @@ struct NonBoolTypeError <: Exception
     # Constructor when the evaluated expression is a vector or array: pretty-print the
     # the non-Boolean indices.
     function NonBoolTypeError(evaled::AbstractArray) 
-        io = IOBuffer()
+        io = failure_ioc(typeinfo = eltype(evaled))
 
         # First print the summary:
         n_nonbool = sum(x -> !isa(x, Bool), evaled, init=0)
         summary(io, evaled)
         print(io, " with ", n_nonbool, " non-Boolean value", n_nonbool == 1 ? "" : "s")
 
-        # Avoid allocating with `findall()` if only a few failures need to be printed.
-        if get_max_print_failures() == 0
-            return new(String(take!(io)))
+        if PRINT_FAILURES_MAX[] == 0
+            return new(stringify!(io))
         end
 
+        # Avoid allocating vector with `findall()` if only a few failures need to be
+        # printed.
         print(io, ":")
-        if get_max_print_failures() == 1
+        if PRINT_FAILURES_MAX[] == 1
             idxs = [findfirst(x -> !isa(x, Bool), evaled)]
         else
             idxs = findall(x -> !isa(x, Bool), evaled)
@@ -332,19 +333,19 @@ struct NonBoolTypeError <: Exception
         
         # Get the pretty-printing function for each index
         print_idx_failure = (io, idx) -> begin
-            print(IOContext(io, :compact => true, :limit => true, :typeinfo => eltype(evaled[idx])), evaled[idx])
-            printstyled(IOContext(io, :color => true), " ===> ", typeof(evaled[idx]), color=:light_yellow)
+            print(io, evaled[idx])
+            printstyled(io, " ===> ", typeof(evaled[idx]), color=:light_yellow)
         end
         print_failures(io, idxs, print_idx_failure, _INDENT_TYPEERROR)
     
-        return new(String(take!(io)))
+        return new(stringify!(io))
     end
 
     function NonBoolTypeError(evaled)
-        io = IOBuffer()
-        print(IOContext(io, :compact => true, :limit => true, :typeinfo => typeof(evaled)), evaled)
-        printstyled(IOContext(io, :color => true), " ===> ", typeof(evaled), color=:light_yellow)
-        return new(String(take!(io)))
+        io = failure_ioc(typeinfo = typeof(evaled))
+        print(io, evaled)
+        printstyled(io, " ===> ", typeof(evaled), color=:light_yellow)
+        return new(stringify!(io))
     end
 end
 
@@ -397,12 +398,14 @@ function recurse_process_basecase!(ex, escargs::Vector{Expr}; outmost::Bool=true
     end
 
     # Create a simple format string
-    fmt = Formatter(addparens)
-    print(fmt, length(escargs))
+    fmt_expr = Formatter(addparens)
+    fmt_term = Formatter(addparens)
+    print(fmt_expr, length(escargs))
+    print(fmt_term, length(escargs))
 
     # Replace the expression with ARG[i]
     ex = :(ARG[$(length(escargs))])
-    return ex, fmt
+    return ex, fmt_expr, fmt_term
 end
 
 function recurse_process_keyword!(ex::Expr, escargs::Vector{Expr}; outmost::Bool=true)
@@ -410,119 +413,156 @@ function recurse_process_keyword!(ex::Expr, escargs::Vector{Expr}; outmost::Bool
     # wrapped in a Ref() call to avoid broadcasting.
     push!(escargs, esc(Expr(:call, :Ref, ex.args[2])))
 
-    fmt = Formatter(false)
-    print(fmt, ex.args[1])
-    print(fmt, "=")
-    print(fmt, length(escargs))
+    fmt_expr = Formatter(false)
+    print(fmt_expr, ex.args[1])
+    print(fmt_expr, "=")
+    print(fmt_expr, length(escargs))
+
+    fmt_term = Formatter(false)
+    print(fmt_term, ex.args[1])
+    print(fmt_term, "=")
+    print(fmt_term, length(escargs))
 
     # Replace keyword argument with ARG[i].x to un-Ref() in evaluation
     ex.args[2] = :(ARG[$(length(escargs))].x)
     
-    return ex, fmt
+    return ex, fmt_expr, fmt_term
 end
 
 function recurse_process_negation!(ex::Expr, escargs::Vector{Expr}; outmost::Bool=true)
     # Recursively update the second argument
-    ex.args[2], fmt_arg = recurse_process!(ex.args[2], escargs)
+    ex.args[2], fmt_expr_arg, fmt_term_arg = recurse_process!(ex.args[2], escargs)
 
     # Never requires parentheses outside the negation
-    fmt = Formatter(false)
-    print(fmt, "!")
-    print(fmt, fmt_arg)
+    fmt_expr = Formatter(false)
+    print(fmt_expr, ex.args[1])
+    print(fmt_expr, fmt_expr_arg)
+    fmt_term = Formatter(false)
+    print(fmt_term, "!")
+    print(fmt_term, fmt_term_arg)
 
     # Escape negation operator
     ex.args[1] = esc(ex.args[1])
 
-    return ex, fmt
+    return ex, fmt_expr, fmt_term
 end
 
 function recurse_process_logical!(ex::Expr, escargs::Vector{Expr}; outmost::Bool=true)
-    fmt = Formatter(!outmost)
+    fmt_expr = Formatter(!outmost)
+    fmt_term = Formatter(!outmost)
+
     for i in 2:length(ex.args)
         # Recursively update the two arguments. If a sub-expression is also logical, 
         # there is no need to parenthesize so consider it `outmost=true`.
-        ex.args[i], fmt_arg = recurse_process!(
+        ex.args[i], fmt_expr_arg, fmt_term_arg = recurse_process!(
             ex.args[i], escargs, outmost=isveclogicalexpr(ex.args[i]))
 
         # Unless it's the first argument, print the operator
-        i == 2 || print(fmt, " ", string_unvec(ex.args[1]), " ")
-        print(fmt, fmt_arg)
+        i == 2 || print(fmt_expr, " ", string(ex.args[1]), " ")
+        i == 2 || print(fmt_term, " ", string_unvec(ex.args[1]), " ")
+        print(fmt_expr, fmt_expr_arg)
+        print(fmt_term, fmt_term_arg)
     end
 
     # Escape the operator
     ex.args[1] = esc(ex.args[1])
 
-    return ex, fmt
+    return ex, fmt_expr, fmt_term
 end
 
 function recurse_process_comparison!(ex::Expr, escargs::Vector{Expr}; outmost::Bool=false)
-    fmt = Formatter(!outmost)
+    fmt_expr = Formatter(!outmost)
+    fmt_term = Formatter(!outmost)
     # Recursively update every other argument (i.e. the terms), and 
     # escape the operators.
     for i in eachindex(ex.args)
         if i % 2 == 1 # Term
-            ex.args[i], fmt_arg = recurse_process!(ex.args[i], escargs)
-            print(fmt, fmt_arg)
+            ex.args[i], fmt_expr_arg, fmt_term_arg = recurse_process!(ex.args[i], escargs)
+            print(fmt_expr, fmt_expr_arg)
+            print(fmt_term, fmt_term_arg)
         else # Operator
-            print(fmt, " ", string_unvec(ex.args[i]), " ")
+            print(fmt_expr, " ", string(ex.args[i]), " ")
+            print(fmt_term, " ", string_unvec(ex.args[i]), " ")
             ex.args[i] = esc(ex.args[i])
         end
     end
     
-    return ex, fmt
+    return ex, fmt_expr, fmt_term
 end
 
 function recurse_process_approx!(ex::Expr, escargs::Vector{Expr}; outmost::Bool=false)
     # Recursively update both positional arguments
-    ex.args[2], fmt_arg1 = recurse_process!(ex.args[2], escargs)
-    ex.args[3], fmt_arg2 = recurse_process!(ex.args[3], escargs)
+    ex.args[2], fmt_expr_arg1, fmt_term_arg1 = recurse_process!(ex.args[2], escargs)
+    ex.args[3], fmt_expr_arg2, fmt_term_arg2 = recurse_process!(ex.args[3], escargs)
 
     # If outmost, format as comparison, otherwise as a function call
-    fmt = Formatter(false)
+    fmt_expr = Formatter(false)
+    fmt_term = Formatter(false)
     if outmost
-        print(fmt, fmt_arg1)
-        print(fmt, " ", string_unvec(ex.args[1]), " ")
-        print(fmt, fmt_arg2)
-        print(fmt, " (")
+        print(fmt_expr, fmt_expr_arg1)
+        print(fmt_expr, " ", string(ex.args[1]), " ")
+        print(fmt_expr, fmt_expr_arg2)
+        print(fmt_expr, " (")
+
+        print(fmt_term, fmt_term_arg1)
+        print(fmt_term, " ", string_unvec(ex.args[1]), " ")
+        print(fmt_term, fmt_term_arg2)
+        print(fmt_term, " (")
     else
-        print(fmt, string_unvec(ex.args[1]))
-        print(fmt, "(")
-        print(fmt, fmt_arg1)
-        print(fmt, ", ")
-        print(fmt, fmt_arg2)
-        print(fmt, ", ")
+        print(fmt_expr, string(ex.args[1]))
+        print(fmt_expr, "(")
+        print(fmt_expr, fmt_expr_arg1)
+        print(fmt_expr, ", ")
+        print(fmt_expr, fmt_expr_arg2)
+        print(fmt_expr, ", ")
+
+        print(fmt_term, string_unvec(ex.args[1]))
+        print(fmt_term, "(")
+        print(fmt_term, fmt_term_arg1)
+        print(fmt_term, ", ")
+        print(fmt_term, fmt_term_arg2)
+        print(fmt_term, ", ")
     end
 
     # Recursively update with keyword arguments
     for i in 4:length(ex.args)
-        ex.args[i], fmt_arg = recurse_process!(ex.args[i], escargs)
-        print(fmt, fmt_arg)
-        i == length(ex.args) || print(fmt, ", ")
+        ex.args[i], fmt_expr_arg, fmt_term_arg = recurse_process!(ex.args[i], escargs)
+        print(fmt_expr, fmt_expr_arg)
+        print(fmt_term, fmt_term_arg)
+        i == length(ex.args) || print(fmt_expr, ", ")
+        i == length(ex.args) || print(fmt_term, ", ")
     end
-    print(fmt, ")")
+    print(fmt_expr, ")")
+    print(fmt_term, ")")
 
     # Escape function
     ex.args[1] = esc(ex.args[1])
 
-    return ex, fmt
+    return ex, fmt_expr, fmt_term
 end
 
 function recurse_process_displayfunc!(ex::Expr, escargs::Vector{Expr}; outmost::Bool=false)
     ex_args = ex.args[2].args
 
-    fmt = Formatter(false)
-    print(fmt, string(ex.args[1]), "(")
+    fmt_expr = Formatter(false)
+    fmt_term = Formatter(false)
+
+    print(fmt_expr, string(ex.args[1]), ".(")
+    print(fmt_term, string(ex.args[1]), "(")
     for i in eachindex(ex_args)
-        ex_args[i], fmt_arg = recurse_process!(ex_args[i], escargs)
-        print(fmt, fmt_arg)
-        i == length(ex_args) || print(fmt, ", ")
+        ex_args[i], fmt_expr_arg, fmt_term_arg = recurse_process!(ex_args[i], escargs)
+        print(fmt_expr, fmt_expr_arg)
+        print(fmt_term, fmt_term_arg)
+        i == length(ex_args) || print(fmt_expr, ", ")
+        i == length(ex_args) || print(fmt_term, ", ")
     end
-    print(fmt, ")")
+    print(fmt_expr, ")")
+    print(fmt_term, ")")
 
     # Escape the function name
     ex.args[1] = esc(ex.args[1])
 
-    return ex, fmt
+    return ex, fmt_expr, fmt_term
 end
 
 # Internal function used at `@test_all` runtime to get a `Returned` `Test.ExecutionResult`
@@ -533,7 +573,7 @@ end
 # - `terms`: a vector of all terms that were broadcasted to produce `evaled`, which can 
 #    be used to produce individual failure messages. It is the result of evaluating and 
 #    concatenating the escaped arguments extracted by `recurse_process!()` into a vector.
-# - `fmt`: a FormatExpr-like string for pretty-printing an individual failure. It is the 
+# - `fmt_term`: a FormatExpr-like string for pretty-printing an individual failure. It is the 
 #    result of `stringify!(f)` on the `Formatter` returned by `recurse_process!()`.
 function eval_test_all(
         @nospecialize(evaled),
@@ -573,7 +613,7 @@ function eval_test_all(
     fmt = FormatExpr(fmt)
 
     # Print the evaluated result:
-    io = IOBuffer()
+    io = failure_ioc()
     print(io, res)
     print(io, "\n    Argument: ")
 
@@ -582,15 +622,13 @@ function eval_test_all(
     if isa(evaled, Union{Bool,Missing})
         terms = repr.(first(broadcasted_terms))
         printfmt(io, fmt, terms...)
-        printstyled(IOContext(io, :color => true), " ===> ", evaled, color=:light_yellow)
+        printstyled(io, " ===> ", evaled, color=:light_yellow)
 
     # Otherwise, use pretty-printing with indices. Note that we are guaranteed that 
     # eltype(evaled) <: Union{Missing,Bool}. 
     else
-        # First, print type of inner expression 
+        # First, print type of inner expression and number of false/missing values
         summary(io, evaled)
-
-        # Then print the number of failures and missing values
         n_missing = sum(x -> ismissing(x), evaled)
         n_false = sum(x -> !x, skipmissing(evaled), init=0)
         print(io, ", ")
@@ -598,31 +636,33 @@ function eval_test_all(
             print(io, n_missing, " missing")
             n_false == 0 || print(io, " and ")
         end
-        n_false == 0 || print(io, n_false, " failure", n_false == 1 ? "" : "s")
+        if n_false > 0
+            print(io, n_false, " failure", n_false == 1 ? "" : "s")
+        end
 
         # Avoid allocating with `findall()` if only a few failures need to be printed.
-        if get_max_print_failures() == 0
-            return Returned(false, String(take!(io)), source)
+        if PRINT_FAILURES_MAX[] == 0
+            return Returned(false, stringify!(io), source)
         end
         idxs = try 
-            if get_max_print_failures() == 1
+            if PRINT_FAILURES_MAX[] == 1
                 [findfirst(x -> x !== true, evaled)]
             else
                 findall(x -> x !== true, evaled)
             end
         catch
-            return Returned(false, String(take!(io)), source)
+            return Returned(false, stringify!(io), source)
         end
         print(io, ": ")
 
         print_idx_message = (io, idx) -> begin
             printfmt(io, fmt, repr.(broadcasted_terms[idx])...)
-            printstyled(IOContext(io, :color => true), " ===> ", evaled[idx], color=:light_yellow)
+            printstyled(io, " ===> ", evaled[idx], color=:light_yellow)
         end
         print_failures(io, idxs, print_idx_message, _INDENT_EVALUATED)
     end
 
-    return Returned(false, String(take!(io)), source)
+    return Returned(false, stringify!(io), source)
 end
 
 # Internal function used at compile time to generate code that will produce the final 
@@ -630,7 +670,12 @@ end
 # so that exceptions can be returned as `Test.Threw` result.
 function get_test_all_result(ex, source)
     escaped_args = Expr[]
-    mod_ex, fmt = recurse_process!(ex, escaped_args; outmost=true)
+    mod_ex, fmt_expr, fmt_term = recurse_process!(ex, escaped_args; outmost=true)
+
+    # Get color-coded expression by passing the unescaped arguments:
+    fmt_expr = FormatExpr("all(" * stringify!(fmt_expr) * ")")
+    str_args = map(a -> sprint(Base.show_unquoted, a.args[1]), escaped_args)
+    str_ex = sprint(printfmt, fmt_expr, str_args..., context = :color => true)
 
     result = quote
         try
@@ -638,7 +683,7 @@ function get_test_all_result(ex, source)
                 eval_test_all(
                     $(mod_ex), 
                     ARG, 
-                    $(stringify!(fmt)),
+                    $(stringify!(fmt_term)),
                     $(QuoteNode(source))
                 )
             end
@@ -648,7 +693,7 @@ function get_test_all_result(ex, source)
         end
     end
 
-    return result
+    return result, str_ex
 end
 
 """
@@ -676,7 +721,7 @@ The form `@test_all f(args...) key=val...` is equivalent to writing
 `@test_all f(args...; key=val...)`. This allows similar behaviour as 
 `@test` when using infix syntax such as approximate comparisons:
 
-```jldoctest
+```jldoctest; filter = r"(\\e\\[\\d+m|\\s+|ERROR.*)"
 julia> v = [0.99, 1.0, 1.01];
 
 julia> @test_all v .≈ 1 atol=0.1
@@ -687,7 +732,7 @@ the first is a call (possibly vectorized with `.` suffix) and the rest are
 assignments (`k=v`).
 
 Keywords `broken` and `skip` function as in `@test`:
-```jldoctest
+```jldoctest; filter = r"(\\e\\[\\d+m|\\s+|ERROR.*)"
 julia> @test_all [1, 2] .< 2 broken=true
 Test Broken
   Expression: all([1, 2] .< 2)
@@ -704,11 +749,8 @@ macro test_all(ex, kws...)
     # Add keywords to the expression
     ex = pushkeywords!(ex, kws...)
 
-    # Get stringified expression before processing
-    str_ex = "all(" * string(ex) * ")"
-
     # Generate code to evaluate expression and return a `Test.ExecutionResult`
-    result = get_test_all_result(ex, __source__)
+    result, str_ex = get_test_all_result(ex, __source__)
 
     result = quote
         if $(length(skip) > 0 && esc(skip[1]))

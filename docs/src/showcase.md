@@ -102,7 +102,7 @@ The introspection works for a range of vectorized expressions, including compari
 bitwise logical operations, and certain common functions:
 
 ```@repl test_all
-a = 1:3
+a = 1:3;
 x = [1, 2, NaN];
 s = ["baa", "moo", ""];
 @test_all (a .< 2) .| isnan.(x) .& .!occursin.(r"a|b", s)

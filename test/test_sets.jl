@@ -3,20 +3,9 @@
     @testset "printing utilities" begin
 
         @testset "printL/R" begin
-            @test destyle(sprint(TM.printL)) == "L"
-            @test destyle(sprint(TM.printL, "(L)")) == "(L)"
-            @test destyle(sprint(TM.printL, "L", " suffix")) == "L suffix"
-
-            @test destyle(sprint(TM.printR)) == "R"
-            @test destyle(sprint(TM.printR, "(R)")) == "(R)"
-            @test destyle(sprint(TM.printR, "R", " suffix")) == "R suffix"
-
             fLR = (args...) -> destyle(sprint(TM.printLsepR, args...))
             @test fLR("L", "sep", "R") == "L sep R"
             @test fLR("L", "sep", "R", " suffix") == "L sep R suffix"
-            fRL = (args...) -> destyle(sprint(TM.printRsepL, args...))
-            @test fRL("R", "sep", "L") == "R sep L"
-            @test fRL("R", "sep", "L", " suffix") == "R sep L suffix"
         end
 
         @testset "printset()" begin
