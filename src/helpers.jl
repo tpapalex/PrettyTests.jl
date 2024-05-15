@@ -16,22 +16,62 @@ get_color(i::Integer) = EXPRESSION_COLORS[(i - 1) % length(EXPRESSION_COLORS) + 
 
 """
     disable_failure_styling()
-    enable_failure_styling()
 
-Globally enable or disable failure message styling in the exported test macros.
-If enabled, failure messages will color-code failure messages to make them more
-human-readable.
+Globally disable ANSI color styling in macro failure messages. 
+    
+All tests macros that are run after this function is called will print failure messages 
+in plain text (until `enable_failure_styling()` is called).
 
-!!! note "Does not affect `Test` styling"
-    These function do not affect any styling from the Test module, e.g. green 
-    `"Test Passed"` or red `Test Failed` print-outs or colored test set summaries. 
+The function can be called when the module is loaded, e.g. in a `runtests.jl` file, to 
+disable styling throughout a test suite. Alternatively, it can be called at the beginning
+of a specific [`@testset`](@extref Julia Test.@testset) and renabled at the end to disable
+styling for that specific test set.
+
+See also [`enable_failure_styling`](@ref).
 """
 function disable_failure_styling()
     STYLED_FAILURES[] = false
 end
+
+"""
+    enable_failure_styling()
+
+Globally enable ANSI color styling in macro failure messages. 
+    
+All test macros that are run after this function is called will print failure messages 
+with ANSI-styled coloring for readability (until `disable_failure_styling()` is called).
+
+See also [`disable_failure_styling`](@ref).
+"""
 function enable_failure_styling()
     STYLED_FAILURES[] = true
 end
+
+# Number of failures that are printed in a `@test_all` failures (via `print_failures()`).
+const MAX_PRINT_FAILURES = Ref{Int64}(10)
+
+"""
+    set_max_print_failures(n=10)
+
+Globaly set the maximum number of individual failure messages that will be printed in a 
+failed [`@test_all`](@ref) test to `n`. If `n === nothing`, all failures will be printed.
+If `n = 0`, no individual failure messages will be printed (only the summary).
+
+By default, if there are more than `n=10` failing elements in a `@test_all`, the macro
+will only show messages for the first and last `5`. Calling this function changes `n`
+globally for all subsequent tests, or until the function is called again.
+
+The function returns the previous value of `n`, in case it is needed to reset the value
+later.
+"""
+function set_max_print_failures(n::Integer=10)
+    @assert n >= 0 
+    old_n = MAX_PRINT_FAILURES[]
+    MAX_PRINT_FAILURES[] = n
+    return old_n
+end
+set_max_print_failures(::Nothing) = set_max_print_failures(typemax(Int64))
+
 
 # Function to create a new IOBuffer() wrapped in an IOContext for creating 
 # failure messages. 

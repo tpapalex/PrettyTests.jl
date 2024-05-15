@@ -24,7 +24,7 @@ makedocs(;
     ),
     pages=[
         "TestMacroExtensions Package" => "index.md",
-        "Macro showcase" => "showcase.md",
+        "Showcase" => "showcase.md",
         "Reference" => "reference.md",
     ],
     plugins=[

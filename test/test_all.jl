@@ -698,14 +698,12 @@
     @testset "printing utilities" begin
 
         @testset "get/set max print failures" begin
-            @test_throws "non-negative" TM.set_max_print_failures(-1)
-            @test TM.set_max_print_failures(5) == 5
-            @test TM.get_max_print_failures() == 5
+            @test_throws AssertionError TM.set_max_print_failures(-1)
 
-            @test TM.set_max_print_failures(nothing) === nothing
-            @test TM.get_max_print_failures() == typemax(Int64)
-
-            @test TM.set_max_print_failures() == 10
+            TM.set_max_print_failures(10)
+            @test TM.set_max_print_failures(5) == 10
+            @test TM.set_max_print_failures(nothing) == 5
+            @test TM.set_max_print_failures() == typemax(Int64)
         end
 
         @testset "stringify_idxs()" begin
@@ -743,8 +741,7 @@
             TM.set_max_print_failures(0)
             @test printfunc(1:9, f) == ""
 
-            TM.set_max_print_failures()
-            @test TM.get_max_print_failures() == 10
+            TM.set_max_print_failures(10)
         end
 
         @testset "NonBoolTypeError" begin

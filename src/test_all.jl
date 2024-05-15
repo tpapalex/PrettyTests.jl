@@ -26,49 +26,6 @@ const COMPARISON_PREC = Base.operator_precedence(:(==))
 const OPS_LOGICAL = (:.&, :.|, :.⊻, :.⊽)
 const OPS_APPROX = (:.≈, :.≉)  
 
-# A reference value for the max number of failures to print in a @testall failure.
-const PRINT_FAILURES_MAX = Ref{Int64}(10)
-
-"""
-    set_max_print_failures(n::Union{Integer,Nothing}=10)
-
-Set the number of individual failures that will be printed in a failing 
-[`@test_all`](@ref) test. The failure summary will still show the total number
-of failed tests, but only the first/last `n` will be individually printed. If 
-`n === nothing`, all failures will be printed. 
-
-```jldoctest; filter = r"(\\e\\[\\d+m|\\s+)", setup = (using TestMacroExtensions: set_max_print_failures)
-julia> set_max_print_failures(2);
-
-julia> @test_all 1:10 .< 0
-Test Failed at none:1
-  Expression: all(1:10 .< 0)
-   Evaluated: false
-    Argument: 10-element BitVector, 10 failures: 
-              [ 1]: 1 < 0 ===> false
-              ⋮
-              [10]: 10 < 0 ===> false
-
-julia> set_max_print_failures(0);
-
-julia> @test_all 1:100 .< 0
-Test Failed at none:1
-  Expression: all(1:100 .< 0)
-   Evaluated: false
-    Argument: 100-element BitVector, 100 failures
-```
-"""
-function set_max_print_failures(n::Integer = 10)
-    @assert n >= 0 "Max number of failures to print must be non-negative."
-    PRINT_FAILURES_MAX[] = n
-end
-function set_max_print_failures(::Nothing)
-    PRINT_FAILURES_MAX[] = typemax(Int64)
-    return
-end
-
-get_max_print_failures() = PRINT_FAILURES_MAX[]
-
 #################### Pre-processing expressions ###################
 # Checks if an operator symbol is vectorized
 function isvecoperator(x::Union{AbstractString,Symbol}) 
@@ -274,11 +231,11 @@ function print_failures(
         prefix=""
     )
 
-    # Depending on PRINT_FAILURES_MAX, filter the indices to some subset.
-    PRINT_FAILURES_MAX[] == 0 && return
-    if length(idxs) > PRINT_FAILURES_MAX[]
-        i_dots = (PRINT_FAILURES_MAX[] ÷ 2)
-        if PRINT_FAILURES_MAX[] % 2 == 1
+    # Depending on MAX_PRINT_FAILURES, filter the indices to some subset.
+    MAX_PRINT_FAILURES[] == 0 && return
+    if length(idxs) > MAX_PRINT_FAILURES[]
+        i_dots = (MAX_PRINT_FAILURES[] ÷ 2)
+        if MAX_PRINT_FAILURES[] % 2 == 1
             i_dots = i_dots + 1
             idxs = idxs[[1:i_dots; end-i_dots+2:end]]
         else
@@ -318,14 +275,14 @@ struct NonBoolTypeError <: Exception
         summary(io, evaled)
         print(io, " with ", n_nonbool, " non-Boolean value", n_nonbool == 1 ? "" : "s")
 
-        if PRINT_FAILURES_MAX[] == 0
+        if MAX_PRINT_FAILURES[] == 0
             return new(stringify!(io))
         end
 
         # Avoid allocating vector with `findall()` if only a few failures need to be
         # printed.
         print(io, ":")
-        if PRINT_FAILURES_MAX[] == 1
+        if MAX_PRINT_FAILURES[] == 1
             idxs = [findfirst(x -> !isa(x, Bool), evaled)]
         else
             idxs = findall(x -> !isa(x, Bool), evaled)
@@ -639,11 +596,11 @@ function eval_test_all(
         end
 
         # Avoid allocating with `findall()` if only a few failures need to be printed.
-        if PRINT_FAILURES_MAX[] == 0
+        if MAX_PRINT_FAILURES[] == 0
             return Returned(false, stringify!(io), source)
         end
         idxs = try 
-            if PRINT_FAILURES_MAX[] == 1
+            if MAX_PRINT_FAILURES[] == 1
                 [findfirst(x -> x !== true, evaled)]
             else
                 findall(x -> x !== true, evaled)

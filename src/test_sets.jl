@@ -214,7 +214,7 @@ interpreted as a set-like comparison:
 
 You can use any `L` and `R` that work with the expanded expressions (including tuples, 
 arrays, sets, dictionaries and strings). The `∅` symbol can also be used for either 
-expression as shorth and for `Set()`.
+expression as shorthand for `Set()`.
 
 The only additional limitation is that `setdiff(L, R)` and `intersect(L, R)` must also
 work, since they are used to generate informative failure messages in some cases.
