@@ -13,5 +13,9 @@ struct TestStruct
 end
 Base.show(io::IO, s::TestStruct) = print(io, "S(", s.a, ", ", s.b, ")")
 
-# Remove ANSI color/escape codes from a string
+# Remove ANSI color codes from a string
 destyle = x -> replace(x, r"\e\[\d+m" => "")
+
+# Evaluate occursin(x, str), but replaces every `\e` with a regex that matches an 
+# ANSI color code.
+ansioccursin = (x, str) -> occursin(Regex(replace(x, '\e' => raw"\e\[\d+m")), str)

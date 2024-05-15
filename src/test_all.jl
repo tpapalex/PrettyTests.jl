@@ -616,13 +616,16 @@ function eval_test_all(
     io = failure_ioc()
     print(io, res)
     print(io, "\n    Argument: ")
+    multiple_terms = length(terms) > 1
 
     # Print a nice message. If the evaluated result (evaled) is a Bool or Missing (not 
     # a vector or array), print a simple message:
     if isa(evaled, Union{Bool,Missing})
         terms = repr.(first(broadcasted_terms))
         printfmt(io, fmt, terms...)
-        printstyled(io, " ===> ", evaled, color=:light_yellow)
+        if multiple_terms
+            printstyled(io, " ===> ", evaled, color=:light_yellow)
+        end
 
     # Otherwise, use pretty-printing with indices. Note that we are guaranteed that 
     # eltype(evaled) <: Union{Missing,Bool}. 
@@ -657,7 +660,9 @@ function eval_test_all(
 
         print_idx_message = (io, idx) -> begin
             printfmt(io, fmt, repr.(broadcasted_terms[idx])...)
-            printstyled(io, " ===> ", evaled[idx], color=:light_yellow)
+            if multiple_terms
+                printstyled(io, " ===> ", evaled[idx], color=:light_yellow)
+            end
         end
         print_failures(io, idxs, print_idx_message, _INDENT_EVALUATED)
     end

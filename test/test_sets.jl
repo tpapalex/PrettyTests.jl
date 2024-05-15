@@ -9,7 +9,7 @@
         end
 
         @testset "printset()" begin
-            f = v -> sprint(TM.printset, v, "set")
+            f = v -> sprint(TM.printset, v, "set", context = TM.failure_ioc())
 
             @test contains(f([1]), "set has 1 element:  [1]")
             @test contains(f([2,3]), "set has 2 elements: [2, 3]")
@@ -22,7 +22,7 @@
         end
 
         @testset "stringify_expr_test_sets()" begin
-            f = ex -> destyle(TM.stringify_expr_test_sets(ex))
+            f = TM.stringify_expr_test_sets
             @test f(:(a == b)) == "a == b"
             @test f(:(a ≠ b)) == "a ≠ b"
             @test f(:(a ⊆ b)) == "a ⊆ b"
@@ -33,6 +33,12 @@
             @test f(:(1:3 == 1:3)) == "1:3 == 1:3"
             @test f(:(Set(3) ≠ [1 2 3])) == "Set(3) ≠ [1 2 3]"
             @test f(:([1,2] ∩ [3,4])) == "[1, 2] ∩ [3, 4] == ∅"
+
+            # Check that output is styled
+            TM.enable_failure_styling()
+            @test ansioccursin("\ea\e == \eb\e", f(:(a == b)))
+            @test ansioccursin("\eset\e ∩ \earr\e == ∅", f(:(set ∩ arr)))
+            TM.disable_failure_styling()
         end
 
     end
@@ -105,17 +111,15 @@
 
             res = f([1,2,3], Set([1,2]))
             @test res.value === false
-            msg = destyle(res.data)
-            @test startswith(msg, "L and R are not equal.")
-            @test contains(msg, "L ∖ R has 1 element:  [3]")
-            @test contains(msg, "R ∖ L has 0 elements: []")
+            @test startswith(res.data, "L and R are not equal.")
+            @test contains(res.data, "L ∖ R has 1 element:  [3]")
+            @test contains(res.data, "R ∖ L has 0 elements: []")
 
             res = f(4:6, 1:9)
             @test res.value === false
-            msg = destyle(res.data)
-            @test startswith(msg, "L and R are not equal.")
-            @test contains(msg, "L ∖ R has 0 elements: []")
-            @test occursin(r"R ∖ L has 6 elements: \[(\d, ){5}\d]", msg)
+            @test startswith(res.data, "L and R are not equal.")
+            @test contains(res.data, "L ∖ R has 0 elements: []")
+            @test occursin(r"R ∖ L has 6 elements: \[(\d, ){5}\d]", res.data)
         end
 
         @testset "op: ≠" begin
@@ -129,15 +133,13 @@
             
             res = f([1,2,3], Set([3,2,1]))
             @test res.value === false
-            msg = destyle(res.data)
-            @test startswith(msg, "L and R are equal.")
-            @test contains(msg, "L = R has 3 elements: [1, 2, 3]")
+            @test startswith(res.data, "L and R are equal.")
+            @test contains(res.data, "L = R has 3 elements: [1, 2, 3]")
 
             res = f([2,1,1,1,1], [1,2])
             @test res.value === false
-            msg = destyle(res.data)
-            @test startswith(msg, "L and R are equal.")
-            @test contains(msg, "L = R has 2 elements: [2, 1]")
+            @test startswith(res.data, "L and R are equal.")
+            @test contains(res.data, "L = R has 2 elements: [2, 1]")
         end
 
         @testset "op: ⊆" begin
@@ -154,15 +156,13 @@
 
             res = f([1,2,3], Set([2,1]))
             @test res.value === false
-            msg = destyle(res.data)
-            @test startswith(msg, "L is not a subset of R.")
-            @test contains(msg, "L ∖ R has 1 element:  [3]")
+            @test startswith(res.data, "L is not a subset of R.")
+            @test contains(res.data, "L ∖ R has 1 element:  [3]")
 
             res = f(4:-1:1, [1,2])
             @test res.value === false
-            msg = destyle(res.data)
-            @test startswith(msg, "L is not a subset of R.")
-            @test contains(msg, "L ∖ R has 2 elements: [4, 3]")
+            @test startswith(res.data, "L is not a subset of R.")
+            @test contains(res.data, "L ∖ R has 2 elements: [4, 3]")
         end
 
         @testset "op: ⊇" begin
@@ -179,15 +179,13 @@
 
             res = f(Set([2,1]), [1,2,3])
             @test res.value === false
-            msg = destyle(res.data)
-            @test startswith(msg, "L is not a superset of R.")
-            @test contains(msg, "R ∖ L has 1 element:  [3]")
+            @test startswith(res.data, "L is not a superset of R.")
+            @test contains(res.data, "R ∖ L has 1 element:  [3]")
 
             res = f([1,2], 4:-1:1)
             @test res.value === false
-            msg = destyle(res.data)
-            @test startswith(msg, "L is not a superset of R.")
-            @test contains(msg, "R ∖ L has 2 elements: [4, 3]")
+            @test startswith(res.data, "L is not a superset of R.")
+            @test contains(res.data, "R ∖ L has 2 elements: [4, 3]")
         end
 
         @testset "op: ⊊" begin
@@ -201,21 +199,18 @@
 
             res = f([1,3,2,3], [1,2,3,1])
             @test res.value === false
-            msg = destyle(res.data)
-            @test startswith(msg, "L is not a proper subset of R, it is equal.")
-            @test contains(msg, "L = R has 3 elements: [1, 3, 2]")
+            @test startswith(res.data, "L is not a proper subset of R, it is equal.")
+            @test contains(res.data, "L = R has 3 elements: [1, 3, 2]")
 
             res = f(Set([1,2,3]), [1,2])
             @test res.value === false
-            msg = destyle(res.data)
-            @test startswith(msg, "L is not a proper subset of R.")
-            @test contains(msg, "L ∖ R has 1 element:  [3]")
+            @test startswith(res.data, "L is not a proper subset of R.")
+            @test contains(res.data, "L ∖ R has 1 element:  [3]")
 
             res = f([1,2,4,1,1,3], [1,2])
             @test res.value === false
-            msg = destyle(res.data)
-            @test startswith(msg, "L is not a proper subset of R.")
-            @test contains(msg, "L ∖ R has 2 elements: [4, 3]")
+            @test startswith(res.data, "L is not a proper subset of R.")
+            @test contains(res.data, "L ∖ R has 2 elements: [4, 3]")
         end
 
         @testset "op: ⊋" begin
@@ -229,21 +224,18 @@
 
             res = f([1,2,3,1], [1,3,2,3])
             @test res.value === false
-            msg = destyle(res.data)
-            @test startswith(msg, "L is not a proper superset of R, it is equal.")
-            @test contains(msg, "L = R has 3 elements: [1, 2, 3]")
+            @test startswith(res.data, "L is not a proper superset of R, it is equal.")
+            @test contains(res.data, "L = R has 3 elements: [1, 2, 3]")
 
             res = f([1,2], Set([1,2,3]))
             @test res.value === false
-            msg = destyle(res.data)
-            @test startswith(msg, "L is not a proper superset of R.")
-            @test contains(msg, "R ∖ L has 1 element:  [3]")
+            @test startswith(res.data, "L is not a proper superset of R.")
+            @test contains(res.data, "R ∖ L has 1 element:  [3]")
 
             res = f([1,2], [1,2,4,1,1,3])
             @test res.value === false
-            msg = destyle(res.data)
-            @test startswith(msg, "L is not a proper superset of R.")
-            @test contains(msg, "R ∖ L has 2 elements: [4, 3]")
+            @test startswith(res.data, "L is not a proper superset of R.")
+            @test contains(res.data, "R ∖ L has 2 elements: [4, 3]")
         end
 
         @testset "op: ∩" begin
@@ -260,15 +252,31 @@
 
             res = f([1,2,3], [3,4])
             @test res.value === false
-            msg = destyle(res.data)
-            @test startswith(msg, "L and R are not disjoint.")
-            @test contains(msg, "L ∩ R has 1 element:  [3]")
+            @test startswith(res.data, "L and R are not disjoint.")
+            @test contains(res.data, "L ∩ R has 1 element:  [3]")
 
             res = f(1:5, 3:8)
             @test res.value === false
-            msg = destyle(res.data)
-            @test startswith(msg, "L and R are not disjoint.")
-            @test contains(msg, "L ∩ R has 3 elements: [3, 4, 5]")
+            @test startswith(res.data, "L and R are not disjoint.")
+            @test contains(res.data, "L ∩ R has 3 elements: [3, 4, 5]")
+        end
+
+        @testset "styling" begin
+            # Brief examples to test styling
+            TM.enable_failure_styling()
+            f = (lhs, op, rhs) -> TM.eval_test_sets(lhs, op, rhs, LineNumberNode(1)).data
+
+            @test ansioccursin("\eL\e and \eR\e are not equal.", f([1,2], :(==), [2,3]))  
+            @test ansioccursin("\eL\e and \eR\e are equal.", f([1,2], :≠, [2,1]))
+            @test ansioccursin("\eL\e is not a subset of \eR\e.", f([1,2], :⊆, [2,3]))
+            @test ansioccursin("\eL\e is not a superset of \eR\e.", f([1,2], :⊇, [2,3]))
+            @test ansioccursin("\eL\e is not a proper subset of \eR\e, it is equal.", f([1,2], :⊊, [2,1]))
+            @test ansioccursin("\eL\e is not a proper subset of \eR\e.", f([1,2], :⊊, [2,3]))
+            @test ansioccursin("\eL\e is not a proper superset of \eR\e, it is equal.", f([1,2], :⊋, [2,1]))
+            @test ansioccursin("\eL\e is not a proper superset of \eR\e.", f([1,2], :⊋, [2,3]))
+            @test ansioccursin("\eL\e and \eR\e are not disjoint.", f([1,2], :∩, [2,3]))
+
+            TM.disable_failure_styling()
         end
     end
 

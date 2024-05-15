@@ -30,9 +30,11 @@ function printLsepR(
         R::AbstractString, 
         suffixes::AbstractString...
     ) 
-    printstyled(io, L, " ", color=EXPRESSION_COLORS[1])
+    printstyled(io, L, color=EXPRESSION_COLORS[1])
+    print(io, " ")
     print(io, sep)
-    printstyled(io, " ", R, color=EXPRESSION_COLORS[2])
+    print(io, " ")
+    printstyled(io, R, color=EXPRESSION_COLORS[2])
     print(io, suffixes...)
 end
 
@@ -47,7 +49,7 @@ function printset(io::IO, v::Union{AbstractVector, AbstractSet}, desc::AbstractS
     print(io, "\n", _INDENT_SETOP)
     print(io, desc)
     print(io, " has ", n, " element", n == 1 ? ":  " : "s: ")
-    Base.show_vector(io, v)
+    Base.show_vector(IOContext(io, :typeinfo => typeof(v)), v)
 end
 
 function printset(io::IO, v, desc::AbstractString)
