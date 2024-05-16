@@ -273,14 +273,19 @@
         stringify! = fmt_io -> TM.stringify!(fmt_io)
         @testset "basecase" begin
 
-            # No parentheses needed
             cases = [
                 :(1),
                 :(a), 
                 :(:a),
                 :([1,2]), 
+                :(a[1]),
                 :(g(x)), 
                 :(g.(x,a=1;b=b)), 
+                :(a + b), 
+                :(a .- b),
+                :(a...), 
+                :(a .&& b),
+                :(a:length(b)),
             ]
 
             @testset "ex: $ex" for ex in cases
@@ -297,29 +302,6 @@
                 @test res == :(ARG[2])
                 @test stringify!(str) == sprint(Base.show_unquoted, ex)
                 @test stringify!(fmt) == "{2:s}"
-            end
-
-            # Parentheses needed
-            cases = [
-                :(a + b), 
-                :(a .- b),
-                :(a...), 
-                :(a .&& b)
-            ]
-            @testset "ex: $ex" for ex in cases
-                args = Expr[]
-
-                res, str, fmt  = escape!(ex, args; outmost=true)
-                @test args == Expr[esc(ex)]
-                @test res == :(ARG[1])
-                @test stringify!(str) == sprint(Base.show_unquoted, ex)
-                @test stringify!(fmt) == "{1:s}"
-
-                res, str, fmt = escape!(ex, args; outmost=false)
-                @test args == Expr[esc(ex), esc(ex)]
-                @test res == :(ARG[2])
-                @test stringify!(str) == sprint(Base.show_unquoted, ex)
-                @test stringify!(fmt) == "({2:s})"
             end
         end
 
@@ -762,7 +744,7 @@
             
             msg = f([true, :a, false, TestStruct(1, π)])
             @test contains(msg, "4-element Vector{Any} with 2 non-Boolean values:")
-            @test contains(msg, "[2]: a ===> Symbol")
+            @test contains(msg, "[2]: :a ===> Symbol")
             @test contains(msg, "[4]: S(1, 3.14159) ===> TestStruct")
 
             msg = f(1:3)
@@ -1069,19 +1051,24 @@
             let errors = @testset NoThrowTestSet begin
                     # 1
                     @test_all A
-                    push!(messages, "UndefVarError: `A` not defined")
+                    push!(messages, ["UndefVarError: `A` not defined"])
                     # 2
                     @test_all sqrt.([1,-1])
-                    push!(messages, "DomainError with -1.0")
+                    push!(messages, ["DomainError with -1.0"])
                     # 3
                     @test_all error("fail ungracefully")
-                    push!(messages, "fail ungracefully")
+                    push!(messages, ["fail ungracefully"])
+                    # 4
                 end
 
                 @testset "error[$i]" for (i, error) in enumerate(errors)
                     @test error isa Test.Error
                     @test error.test_type === :test_error
-                    @test contains(sprint(show, error), messages[i])
+
+                    
+                    for msg in messages[i]
+                        @test contains(sprint(show, error), msg)
+                    end
                 end
             end
         end

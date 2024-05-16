@@ -8,7 +8,10 @@ DocMeta.setdocmeta!(TestMacroExtensions, :DocTestSetup, :(using TestMacroExtensi
 #     sitename="TestMacroExtensions.jl",
 # )
 
-links = InterLinks("Julia" => "https://docs.julialang.org/en/v1/");
+links = InterLinks(
+    "Julia" => "https://docs.julialang.org/en/v1/", 
+    "numpy" => "https://numpy.org/doc/stable/"
+);
 
 makedocs(;
     modules=[TestMacroExtensions],

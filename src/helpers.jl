@@ -20,7 +20,7 @@ get_color(i::Integer) = EXPRESSION_COLORS[(i - 1) % length(EXPRESSION_COLORS) + 
 Globally disable ANSI color styling in macro failure messages. 
     
 All tests macros that are run after this function is called will print failure messages 
-in plain text (until `enable_failure_styling()` is called).
+in plain text (or until `enable_failure_styling()` is called).
 
 The function can be called when the module is loaded, e.g. in a `runtests.jl` file, to 
 disable styling throughout a test suite. Alternatively, it can be called at the beginning
@@ -39,7 +39,7 @@ end
 Globally enable ANSI color styling in macro failure messages. 
     
 All test macros that are run after this function is called will print failure messages 
-with ANSI-styled coloring for readability (until `disable_failure_styling()` is called).
+with ANSI-styled coloring for readability (or until `disable_failure_styling()` is called).
 
 See also [`disable_failure_styling`](@ref).
 """
@@ -55,7 +55,7 @@ const MAX_PRINT_FAILURES = Ref{Int64}(10)
 
 Globaly set the maximum number of individual failure messages that will be printed in a 
 failed [`@test_all`](@ref) test to `n`. If `n === nothing`, all failures will be printed.
-If `n = 0`, no individual failure messages will be printed (only the summary).
+If `n == 0`, no individual failure messages will be printed.
 
 By default, if there are more than `n=10` failing elements in a `@test_all`, the macro
 will only show messages for the first and last `5`. Calling this function changes `n`
