@@ -1,7 +1,7 @@
 ################### Global behavior variables ##################
 
 # Whether expressions should be color coded in the output.
-const STYLED_FAILURES = Ref{Bool}(true) 
+const STYLED_FAILURES = Ref{Bool}(get(stdout, :color, false)) 
 
 # Color cycle used for expression coloring
 const EXPRESSION_COLORS = (
@@ -19,7 +19,7 @@ get_color(i::Integer) = EXPRESSION_COLORS[(i - 1) % length(EXPRESSION_COLORS) + 
 
 Globally disable ANSI color styling in macro failure messages. 
     
-All tests macros that are run after this function is called will print failure messages 
+All tests macros that are run after this function will print failure messages 
 in plain text (or until `enable_failure_styling()` is called).
 
 The function can be called when the module is loaded, e.g. in a `runtests.jl` file, to 
@@ -38,8 +38,8 @@ end
 
 Globally enable ANSI color styling in macro failure messages. 
     
-All test macros that are run after this function is called will print failure messages 
-with ANSI-styled coloring for readability (or until `disable_failure_styling()` is called).
+All test macros that are run after this function will print failure messages 
+with ANSI color styling for readability (or until `disable_failure_styling()` is called).
 
 See also [`disable_failure_styling`](@ref).
 """
@@ -53,16 +53,35 @@ const MAX_PRINT_FAILURES = Ref{Int64}(10)
 """
     set_max_print_failures(n=10)
 
-Globaly set the maximum number of individual failure messages that will be printed in a 
-failed [`@test_all`](@ref) test to `n`. If `n === nothing`, all failures will be printed.
-If `n == 0`, no individual failure messages will be printed.
+Globaly sets the maximum number of individual failures that will be printed in a 
+failed [`@test_all`](@ref) test to `n`. If `n` is `nothing`, all failures are printed.
+If `n == 0`, only a summary is printed.
 
 By default, if there are more than `n=10` failing elements in a `@test_all`, the macro
-will only show messages for the first and last `5`. Calling this function changes `n`
+only shows messages for the first and last `5`. Calling this function changes `n`
 globally for all subsequent tests, or until the function is called again.
 
-The function returns the previous value of `n`, in case it is needed to reset the value
-later.
+The function returns the previous value of `n` so that it can be restored if desired.
+
+# Examples
+```jldoctest; filter = r"(\\e\\[\\d+m|\\s+|ERROR.*)",setup = (using TestMacroExtensions: set_max_print_failures)
+julia> @test_all 1:3 .== 0
+Test Failed at none:1
+  Expression: all(1:3 .== 0)
+   Evaluated: false
+    Argument: 3-element BitVector, 3 failures: 
+              [1]: 1 == 0 ===> false
+              [2]: 2 == 0 ===> false
+              [3]: 3 == 0 ===> false
+
+julia> set_max_print_failures(0);
+
+julia> @test_all 1:3 .== 0
+Test Failed at none:1
+  Expression: all(1:3 .== 0)
+   Evaluated: false
+    Argument: 3-element BitVector, 3 failures
+```
 """
 function set_max_print_failures(n::Integer=10)
     @assert n >= 0 

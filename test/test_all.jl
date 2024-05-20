@@ -278,14 +278,15 @@
                 :(a), 
                 :(:a),
                 :([1,2]), 
+                :(Int64[a,b]),
                 :(a[1]),
                 :(g(x)), 
-                :(g.(x,a=1;b=b)), 
-                :(a + b), 
-                :(a .- b),
-                :(a...), 
-                :(a .&& b),
+                :(g.(x,a=1;b=b)),
                 :(a:length(b)),
+                :(a...), 
+                :(√a),
+                :(A'),
+                :(10 * TOL),
             ]
 
             @testset "ex: $ex" for ex in cases
@@ -301,6 +302,29 @@
                 @test args == Expr[esc(ex), esc(ex)]
                 @test res == :(ARG[2])
                 @test stringify!(str) == sprint(Base.show_unquoted, ex)
+                @test stringify!(fmt) == "{2:s}"
+            end
+        
+            cases = [
+                :(a + b), 
+                :(a .- b),
+                :(a && b),
+                :(a * b)
+            ]
+
+            @testset "ex: $ex" for ex in cases
+                args = Expr[]
+
+                res, str, fmt  = escape!(ex, args; outmost=true)
+                @test args == Expr[esc(ex)]
+                @test res == :(ARG[1])
+                @test stringify!(str) == sprint(Base.show_unquoted, ex)
+                @test stringify!(fmt) == "{1:s}"
+
+                res, str, fmt  = escape!(ex, args; outmost=false)
+                @test args == Expr[esc(ex), esc(ex)]
+                @test res == :(ARG[2])
+                @test stringify!(str) == "(" * sprint(Base.show_unquoted, ex) * ")"
                 @test stringify!(fmt) == "{2:s}"
             end
         end
@@ -977,6 +1001,16 @@
                         "Expression: all(1 .== missing)",
                         "Evaluated: missing",
                         "Argument: 1 == missing ===> missing",
+                    ])
+
+                    # 14
+                    a = [-1, 2, 1]
+                    @test_all ifelse.(a .< 0, -a .% 2, a .% 2) .== 1
+                    push!(messages, [
+                        "Expression: all(ifelse.(a .< 0, -a .% 2, a .% 2) .== 1)",
+                        "Evaluated: false",
+                        "Argument: 3-element BitVector, 1 failure:",
+                        "[2]: ifelse(2 < 0, 0, 0) == 1 ===> false",
                     ])
                 end
                 

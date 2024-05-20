@@ -201,7 +201,7 @@ end
     @test_sets L op R broken=true
     @test_sets L op R skip=true
 
-Tests that the expression `L op R` returns `true`, where `op` is an infix operator
+Test that the expression `L op R` evaluates to `true`, where `op` is an infix operator
 interpreted as a set-like comparison:
 
 - `L == R` expands to `issetequal(L, R)`
@@ -212,9 +212,15 @@ interpreted as a set-like comparison:
 - `L ⊋ R` expands to `⊋(L, R)`
 - `L ∩ R` or `L || R` expands to `isdisjoint(L, R)`
 
-You can use any `L` and `R` that work with the expanded expressions (including tuples, 
-arrays, sets, dictionaries and strings). The `∅` symbol can also be used for either 
-expression as shorthand for `Set()`.
+If executed inside a [`Test.@testset`](@extref Julia), return a [`Test.Pass`]
+(@extref Julia) result if it does, a [`Test.Fail`](@extref Julia) result if it is
+`false`, and an [`Test.Error`](@extref Julia) result if it could not 
+be evaluated. If executed outside a `@testset`, throw an exception instead of 
+returning `Test.Fail` or `Test.Error`.
+
+You can use any `L` and `R` that work with the expanded expressions above (including 
+tuples, arrays, sets, dictionaries, strings, and more generable iterables). The `∅` 
+symbol can also be used as shorthand for `Set()`.
 
 The only additional limitation is that `setdiff(L, R)` and `intersect(L, R)` must also
 work, since they are used to generate informative failure messages in some cases.
@@ -229,27 +235,27 @@ See also: [`Base.issetequal`](@extref Julia), [`Base.issubset`](@extref Julia),
     to shorthand `L ∩ R` and `L || R`.
 
 !!! note "Typing unicode characters"
-    Unicode operators like the above can be typed in Julia editors by typing 
+    Unicode operators can be typed in Julia editors by writing 
     `\\<name><tab>`. The ones supported by this macro are `≠` (`\\neq`), 
-    `⊆` (`\\subseteq`), `⊇` (`\\supseteq`), `⊂` (`\\subset`),`⊃` (`\\supset`), 
-    `⊊` (`\\subsetneq`), `⊋` (`\\supsetneq`), `∩` (\\cap), and `∅` (`\\emptyset`). 
+    `⊆` (`\\subseteq`), `⊇` (`\\supseteq`), `⊂` (`\\subset`), `⊃` (`\\supset`), 
+    `⊊` (`\\subsetneq`), `⊋` (`\\supsetneq`), `∩` (`\\cap`), and `∅` (`\\emptyset`). 
 
 # Examples 
 
 ```jldoctest; filter = r"(\\e\\[\\d+m|\\s+)"
-julia> @test_sets (1,2) == (2,1,1,1)
+julia> @test_sets (1, 2) == (2, 1, 1, 1)
 Test Passed
 
-julia> @test_sets ∅ ⊆ 1:10
+julia> @test_sets ∅ ⊆ 1:5
 Test Passed
 
-julia> @test_sets 1:20 ⊇ 42
+julia> @test_sets 1:3 ⊇ 5
 Test Failed at none:1
-  Expression: 1:20 ⊇ 42
+  Expression: 1:3 ⊇ 5
    Evaluated: L is not a superset of R.
-              R ∖ L has 1 element:  [42]
+              R ∖ L has 1 element:  [5]
 
-julia> @test_sets [1,2,3] ∩ [2,3,4]
+julia> @test_sets [1, 2, 3] ∩ [2, 3, 4]
 Test Failed at none:1
   Expression: [1, 2, 3] ∩ [2, 3, 4] == ∅
    Evaluated: L and R are not disjoint.
@@ -259,6 +265,7 @@ julia> @test_sets "baabaa" ≠ 'a':'b'
 Test Failed at none:1
   Expression: "baabaa" ≠ 'a':'b'
    Evaluated: L and R are equal.
+              L = R has 2 elements: ['b', 'a']
 ```
 
 The macro supports `broken=cond` and `skip=cond` keywords, with similar behavior 
@@ -267,19 +274,19 @@ to [`Test.@test`](@extref Julia):
 # Examples
 
 ```jldoctest; filter = r"(\\e\\[\\d+m|\\s+|ERROR.*)"
-julia> @test_sets 1 ⊆ 2:3 broken=true
+julia> @test_sets [1] ⊆ [2, 3] broken=true
 Test Broken
-  Expression: 1 ⊆ 2:3
+  Expression: [1] ⊆ [2, 3]
 
-julia> @test_sets 1 ⊆ 1:3 broken=true
+julia> @test_sets [1] ⊆ [1, 2] broken=true
 Error During Test at none:1
  Unexpected Pass
- Expression: 1 ⊆ 1:3
+ Expression: [1] ⊆ [1, 2]
  Got correct result, please change to @test if no longer broken.
 
-julia> @test_sets 1 ⊆ 2:3 skip=true
+julia> @test_sets [1] ⊆ [2, 3] skip=true
 Test Broken
-  Skipped: 1 ⊆ 2:3
+  Skipped: [1] ⊆ [2, 3]
 ```
 """
 macro test_sets(ex, kws...)    

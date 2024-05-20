@@ -11,10 +11,12 @@ const DISPLAYABLE_FUNCS = (
     :ismissing, 
     :isnan, 
     :isinf, 
+    :isfinite,
     :iseven, 
     :isodd, 
     :isreal,
     :isa, 
+    :ifelse,
     :≈, 
     :≉,
 )
@@ -368,12 +370,33 @@ function recurse_process_basecase!(ex, escargs::Vector{Expr}; outmost::Bool=fals
     # Escape entire expression to args
     push!(escargs, esc(ex))
 
-    str = Formatter(false) # rely on Base.show_unquoted for parens
+    parens = if outmost
+        false
+    elseif isexpr(ex, :call) && Meta.isbinaryoperator(ex.args[1]::Symbol)
+        # Range definition, e.g. 1:5
+        if ex.args[1] === :(:)
+            false
+        # scalar multiplication, e.g. 100x
+        elseif ex.args[1] === :* &&
+            length(ex.args) == 3 &&
+            isa(ex.args[2], Union{Int, Int64, Float32, Float64}) && 
+            isa(ex.args[3], Symbol)
+            false
+        # Other binary operator expressions
+        else
+            true
+        end
+    elseif isexpr(ex, (:&&, :||))
+        true
+    else
+        false
+    end
+
+    str = Formatter(parens)
     print(str, sprint(Base.show_unquoted, ex), i=length(escargs))
 
     # No need for parens in the format because this is an argument that will 
     fmt = Formatter(false)
-    # 
     print(fmt, "{$(length(escargs)):s}", i=length(escargs))
 
     # Replace the expression with ARG[i]
@@ -518,7 +541,7 @@ function recurse_process_displayfunc!(ex::Expr, escargs::Vector{Expr}; outmost::
     print(str, string(ex.args[1]), ".(")
     print(fmt, string(ex.args[1]), "(")
     for i in eachindex(ex_args)
-        ex_args[i], str_arg, fmt_arg = recurse_process!(ex_args[i], escargs)
+        ex_args[i], str_arg, fmt_arg = recurse_process!(ex_args[i], escargs, outmost=true)
         print(str, str_arg)
         print(fmt, fmt_arg)
         i == length(ex_args) || print(str, ", ")
@@ -562,8 +585,14 @@ function eval_test_all(
     # If all() returns true, no need for pretty printing anything. 
     res === true && return Returned(true, nothing, source)
 
-    # Broadcast the input terms and compile the formatting expression for pretty printing
-    broadcasted_terms = Base.broadcasted(tuple, terms...)
+    # Broadcast the input terms and compile the formatting expression for pretty printing. 
+    # Wrap in a try catch/block, so that we can fallback to a simple message if the
+    # some terms are not broadcastable, or if the size of the broadcasted terms
+    # does not match the size of the evaluated result (I believe the latter should not
+    # happen, but better safe than sorry).
+    # try 
+        broadcasted_terms = Base.broadcasted(tuple, terms...)
+        # size(broadcasted_terms) == size(evaled) || Broad)
     fmt = FormatExpr(fmt)
 
     # Print the evaluated result:
@@ -650,18 +679,25 @@ end
 """
     @test_all ex
     @test_all f(args...) key=val ...
+    @test_all .!f(args...) key=val ...
+    @test_all ex broken=true
+    @test_all ex skip=true
 
-Performs the same test as `@test all(ex)`, but without short-circuiting. Returns a
-`Test.Pass` result if `all(ex) == true`, and a `Test.Fail` result otherwise. If `ex`
-contains any non-Boolean, non-Missing values
+Test that the expression `all(ex)` evaluates to `true`.
 
+If executed inside a [`Test.@testset`](@extref Julia), return a [`Test.Pass`]
+(@extref Julia) result if it does, a [`Test.Fail`](@extref Julia) result if it is
+`false` or `missing`, and an [`Test.Error`](@extref Julia) result if it could not 
+be evaluated. If executed outside a `@testset`, throw an exception instead of 
+returning `Test.Fail` or `Test.Error`.
 
-This allows 
-more informative failure messages to be printed for each element of `ex` that was `false`.
+Unlike `@test all(ex)`, evaluation of `ex` will not short-circuit at the first `false`
+value. All elements of `ex` are evaluated, so that all values that were `false` or 
+`missing` can be shown in the failure message.    
 
 # Examples
 ```jldoctest; filter = r"(\\e\\[\\d+m|\\s+|ERROR.*)"
-julia> @test_all [1.0, 2.0] .== 1:2
+julia> @test_all [1.0, 2.0] .== [1, 2]
 Test Passed
 
 julia> @test_all [1, 2, 3] .< 2
@@ -673,25 +709,47 @@ Test Failed at none:1
               [3]: 3 < 2 ===> false
 ```
 
-The form `@test_all f(args...) key=val...` is equivalent to writing 
-`@test_all f(args...; key=val...)`. This allows similar behaviour as 
-`@test` when using infix syntax such as approximate comparisons:
+Similar to [`@test](@extref Julia Test.@test), the `@test_all f(args...) key=val...` form
+is equivalent to writing `@test_all f(args...; key=val...)` which can be useful when the
+expression is a call using infix syntax such as vectorized approximate comparisons: 
 
-```jldoctest; filter = r"(\\e\\[\\d+m|\\s+|ERROR.*)"
+
+```jldoctest approx; filter = r"(\\e\\[\\d+m|\\s+|ERROR.*)"
 julia> v = [0.99, 1.0, 1.01];
 
 julia> @test_all v .≈ 1 atol=0.1
 Test Passed
 ```
+
+This is equivalent to the uglier test `@test_all .≈(v, 1, atol=0.1)`. 
+Keyword splicing also works through any negation operator:
+
+```jldoctest approx; filter = r"(\\e\\[\\d+m|\\s+|ERROR.*)"
+julia> @test_all .!(v .≈ 1) atol=0.001
+Test Failed at none:1
+  Expression: all(.!.≈(v, 1, atol=0.001))
+   Evaluated: false
+    Argument: 3-element BitVector, 1 failure: 
+              [2]: !≈(1.0, 1, atol=0.001) ===> false
+```
+
 As with `@test`, it is an error to supply more than one expression unless 
-the first is a call (possibly vectorized with `.` suffix) and the rest are 
+the first is a call (possibly broadcast `.` syntax) and the rest are 
 assignments (`k=v`).
 
-Keywords `broken` and `skip` function as in `@test`:
+The macro supports `broken=true` and `skip=true` keywords, with similar behavior 
+to [`Test.@test`](@extref Julia):
+
 ```jldoctest; filter = r"(\\e\\[\\d+m|\\s+|ERROR.*)"
 julia> @test_all [1, 2] .< 2 broken=true
 Test Broken
   Expression: all([1, 2] .< 2)
+
+julia> @test_all [1, 2] .< 3 broken=true
+Error During Test at none:1
+ Unexpected Pass
+ Expression: all([1, 2] .< 3)
+ Got correct result, please change to @test if no longer broken.
 
 julia> @test_all [1, 2, 3] .< 2 skip=true
 Test Broken

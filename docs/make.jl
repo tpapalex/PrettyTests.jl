@@ -26,8 +26,8 @@ makedocs(;
         assets=String[],
     ),
     pages=[
-        "TestMacroExtensions Package" => "index.md",
-        "Showcase" => "showcase.md",
+        "Introduction" => "index.md",
+        "Examples" => "examples.md",
         "Reference" => "reference.md",
     ],
     plugins=[
