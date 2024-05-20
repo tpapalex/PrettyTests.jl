@@ -1,4 +1,4 @@
-## Test macros
+## Macros
 
 ```@docs
 TestMacroExtensions.@test_sets

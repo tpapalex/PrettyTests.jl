@@ -26,8 +26,7 @@ makedocs(;
         assets=String[],
     ),
     pages=[
-        "Introduction" => "index.md",
-        "Examples" => "examples.md",
+        "Home" => "index.md",
         "Reference" => "reference.md",
     ],
     plugins=[
