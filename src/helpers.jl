@@ -48,7 +48,7 @@ function enable_failure_styling()
 end
 
 # Number of failures that are printed in a `@test_all` failures (via `print_failures()`).
-const MAX_PRINT_FAILURES = Ref{Int64}(10)
+const MAX_PRINT_FAILURES = Ref{Int}(10)
 
 """
     set_max_print_failures(n=10)
@@ -89,7 +89,7 @@ function set_max_print_failures(n::Integer=10)
     MAX_PRINT_FAILURES[] = n
     return old_n
 end
-set_max_print_failures(::Nothing) = set_max_print_failures(typemax(Int64))
+set_max_print_failures(::Nothing) = set_max_print_failures(typemax(Int))
 
 
 # Function to create a new IOBuffer() wrapped in an IOContext for creating 

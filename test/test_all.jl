@@ -278,7 +278,7 @@
                 :(a), 
                 :(:a),
                 :([1,2]), 
-                :(Int64[a,b]),
+                :(Int[a,b]),
                 :(a[1]),
                 :(g(x)), 
                 :(g.(x,a=1;b=b)),
@@ -709,7 +709,7 @@
             PT.set_max_print_failures(10)
             @test PT.set_max_print_failures(5) == 10
             @test PT.set_max_print_failures(nothing) == 5
-            @test PT.set_max_print_failures() == typemax(Int64)
+            @test PT.set_max_print_failures() == typemax(Int)
         end
 
         @testset "stringify_idxs()" begin
@@ -755,16 +755,16 @@
             f = evaled -> destyle(PT.NonBoolTypeError(evaled).msg)
 
             # Non-array
-            @test f(1) == "1 ===> Int64"
+            @test f(1) == "1 ===> $Int"
             @test f(:a) == "a ===> Symbol"
             @test f(TestStruct(1, π)) == "S(1, 3.14159) ===> TestStruct"
             @test f(Set{Int16}(1:1)) == "Set([1]) ===> Set{Int16}"
 
             # Arrays
             msg = f([1,2])
-            @test contains(msg, "2-element Vector{Int64} with 2 non-Boolean values:") 
-            @test contains(msg, "[1]: 1 ===> Int64\n")
-            @test contains(msg, "[2]: 2 ===> Int64")
+            @test contains(msg, "2-element Vector{$Int} with 2 non-Boolean values:") 
+            @test contains(msg, "[1]: 1 ===> $Int\n")
+            @test contains(msg, "[2]: 2 ===> $Int")
             
             msg = f([true, :a, false, TestStruct(1, π)])
             @test contains(msg, "4-element Vector{Any} with 2 non-Boolean values:")
@@ -772,7 +772,7 @@
             @test contains(msg, "[4]: S(1, 3.14159) ===> TestStruct")
 
             msg = f(1:3)
-            @test contains(msg, "3-element UnitRange{Int64} with 3 non-Boolean values:")
+            @test contains(msg, "3-element UnitRange{$Int} with 3 non-Boolean values:")
         end
     end
 

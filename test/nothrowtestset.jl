@@ -8,7 +8,7 @@ Test.finish(ts::NoThrowTestSet) = ts.results
 
 # User-defined struct with custom show for testing
 struct TestStruct 
-    a::Int64
+    a::Int
     b::Float64
 end
 Base.show(io::IO, s::TestStruct) = print(io, "S(", s.a, ", ", s.b, ")")
