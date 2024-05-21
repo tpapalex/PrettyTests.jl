@@ -73,6 +73,6 @@ jobs:
         shell: julia --project=docs --color=yes {0}
         run: |
           using Documenter: DocMeta, doctest
-          using TestMacroExtensions
-          DocMeta.setdocmeta!(TestMacroExtensions, :DocTestSetup, :(using TestMacroExtensions); recursive=true)
-          doctest(TestMacroExtensions)
+          using PrettyTests
+          DocMeta.setdocmeta!(PrettyTests, :DocTestSetup, :(using PrettyTests); recursive=true)
+          doctest(PrettyTests)

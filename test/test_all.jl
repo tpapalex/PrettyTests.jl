@@ -16,7 +16,7 @@
             ]
 
             @testset "ex: $ex" for ex in cases
-                modex = TM.pushkeywords!(ex)
+                modex = PT.pushkeywords!(ex)
                 @test modex === ex
             end
         end
@@ -34,7 +34,7 @@
             ]
 
             @testset "push (x=1) to ex: $ex" for (ex, res) in cases
-                mod_ex = TM.pushkeywords!(ex, :(x = 1))
+                mod_ex = PT.pushkeywords!(ex, :(x = 1))
                 @test mod_ex == res
             end
 
@@ -44,7 +44,7 @@
                 :(.!g.(a)) => :(.!g.(a, x = 1, y = 2))
             ]
             @testset "push (x=1,y=2) to ex: $ex" for (ex, res) in cases
-                mod_ex = TM.pushkeywords!(ex, :(x = 1), :(y=2))
+                mod_ex = PT.pushkeywords!(ex, :(x = 1), :(y=2))
                 @test mod_ex == res
             end
         end
@@ -62,7 +62,7 @@
             ]
 
             @testset "ex: $ex" for ex in cases
-                @test_throws "does not accept keyword" TM.pushkeywords!(ex, :(x = 1))
+                @test_throws "does not accept keyword" PT.pushkeywords!(ex, :(x = 1))
             end
         end
 
@@ -76,12 +76,12 @@
             ]
 
             @testset "kw: $kw" for kw in cases
-                @test_throws "is not valid keyword" TM.pushkeywords!(:(g()), kw)
+                @test_throws "is not valid keyword" PT.pushkeywords!(:(g()), kw)
             end
 
             # Same but where only some keywords are invalid
             @testset "kws: (x = 1, $kw)" for kw in cases
-                @test_throws "is not valid keyword" TM.pushkeywords!(:(g()), :(x = 1), kw)
+                @test_throws "is not valid keyword" PT.pushkeywords!(:(g()), :(x = 1), kw)
             end
         end
     end
@@ -101,7 +101,7 @@
             ]
 
             @testset "ex: $ex" for (ex, res) in cases
-                proc_ex = TM.preprocess_test_all(ex)
+                proc_ex = PT.preprocess_test_all(ex)
                 @test proc_ex == res
                 @test proc_ex !== res # returns new expression
             end
@@ -126,7 +126,7 @@
             ]
 
             @testset "ex: $ex" for (ex, res) in cases
-                proc_ex = TM.preprocess_test_all(ex)
+                proc_ex = PT.preprocess_test_all(ex)
                 @test proc_ex == res 
                 @test proc_ex !== res # returns new expression
             end
@@ -148,8 +148,8 @@
             ]
 
             @testset "ex: $ex" for ex in cases
-                @test TM.preprocess_test_all(deepcopy(ex)) == ex 
-                @test TM.preprocess_test_all(ex) === ex
+                @test PT.preprocess_test_all(deepcopy(ex)) == ex 
+                @test PT.preprocess_test_all(ex) === ex
             end
         end
     end
@@ -172,8 +172,8 @@
             ]
 
             @testset "ex: $ex ===> $res" for (ex, res) in cases
-                ex = TM.preprocess_test_all(ex)
-                @test TM.isvecnegationexpr(ex) === res
+                ex = PT.preprocess_test_all(ex)
+                @test PT.isvecnegationexpr(ex) === res
             end
         end
 
@@ -194,8 +194,8 @@
             ]
 
             @testset "ex: $ex ===> $res" for (ex, res) in cases
-                ex = TM.preprocess_test_all(ex)
-                @test TM.isveclogicalexpr(ex) === res
+                ex = PT.preprocess_test_all(ex)
+                @test PT.isveclogicalexpr(ex) === res
             end
         end
 
@@ -215,8 +215,8 @@
             ]
 
             @testset "$ex => $res" for (ex, res) in cases
-                ex = TM.preprocess_test_all(ex)
-                @test TM.isveccomparisonexpr(ex) === res
+                ex = PT.preprocess_test_all(ex)
+                @test PT.isveccomparisonexpr(ex) === res
             end
         end
 
@@ -238,8 +238,8 @@
                 :(a .|| b) => false,
             ]
             @testset "ex: $ex ===> $res" for (ex, res) in cases
-                ex = TM.preprocess_test_all(ex)
-                @test TM.isvecapproxexpr(ex) === res
+                ex = PT.preprocess_test_all(ex)
+                @test PT.isvecapproxexpr(ex) === res
             end
         end
 
@@ -261,16 +261,16 @@
                 :(a .== b) => false,
             ]
             @testset "ex: $ex ===> $res" for (ex, res) in cases
-                ex = TM.preprocess_test_all(ex)
-                @test TM.isvecdisplayexpr(ex) === res
+                ex = PT.preprocess_test_all(ex)
+                @test PT.isvecdisplayexpr(ex) === res
             end
         end
     end
 
     @testset "recurse_process!()" begin 
 
-        escape! = (ex, args; kws...) -> TM.recurse_process!(deepcopy(ex), args; kws...)
-        stringify! = fmt_io -> TM.stringify!(fmt_io)
+        escape! = (ex, args; kws...) -> PT.recurse_process!(deepcopy(ex), args; kws...)
+        stringify! = fmt_io -> PT.stringify!(fmt_io)
         @testset "basecase" begin
 
             cases = [
@@ -639,11 +639,11 @@
         @testset "styling" begin
             f = ex -> begin
                 args = Expr[]
-                _, str, fmt = TM.recurse_process!(ex, args; outmost=true)
-                TM.stringify!(str), TM.stringify!(fmt)
+                _, str, fmt = PT.recurse_process!(ex, args; outmost=true)
+                PT.stringify!(str), PT.stringify!(fmt)
             end
 
-            TM.enable_failure_styling()
+            PT.enable_failure_styling()
 
             # Base case
             str, fmt = f(:(a))
@@ -697,31 +697,31 @@
             @test occursin(ansire("isnan\\.\\(\ex\e, a=\e1\e\\)"), str)
             @test occursin(ansire("isnan\\(\e{1:s}\e, a=\e{2:s}\e\\)"), fmt)
 
-            TM.disable_failure_styling()
+            PT.disable_failure_styling()
         end
     end
 
     @testset "printing utilities" begin
 
         @testset "get/set max print failures" begin
-            @test_throws AssertionError TM.set_max_print_failures(-1)
+            @test_throws AssertionError PT.set_max_print_failures(-1)
 
-            TM.set_max_print_failures(10)
-            @test TM.set_max_print_failures(5) == 10
-            @test TM.set_max_print_failures(nothing) == 5
-            @test TM.set_max_print_failures() == typemax(Int64)
+            PT.set_max_print_failures(10)
+            @test PT.set_max_print_failures(5) == 10
+            @test PT.set_max_print_failures(nothing) == 5
+            @test PT.set_max_print_failures() == typemax(Int64)
         end
 
         @testset "stringify_idxs()" begin
             I = CartesianIndex
-            @test TM.stringify_idxs([1,2,3]) == ["1", "2", "3"]
-            @test TM.stringify_idxs([1,100,10]) == ["  1", "100", " 10"]
-            @test TM.stringify_idxs([I(1,1), I(1,10), I(100,1)]) == [
+            @test PT.stringify_idxs([1,2,3]) == ["1", "2", "3"]
+            @test PT.stringify_idxs([1,100,10]) == ["  1", "100", " 10"]
+            @test PT.stringify_idxs([I(1,1), I(1,10), I(100,1)]) == [
                                     "  1, 1", "  1,10", "100, 1"]
         end
 
         @testset "print_failures()" begin
-            printfunc = (args...) -> sprint(TM.print_failures, args...)
+            printfunc = (args...) -> sprint(PT.print_failures, args...)
 
             # Without abbreviating output
             f = (io, idx) -> print(io, 2 * idx)
@@ -735,24 +735,24 @@
             # With abbreviating output
             f = (io, idx) -> print(io, idx)
 
-            TM.set_max_print_failures(5)
+            PT.set_max_print_failures(5)
             @test printfunc(1:9, f) == "\n[1]: 1\n[2]: 2\n[3]: 3\n⋮\n[8]: 8\n[9]: 9"
 
-            TM.set_max_print_failures(2)
+            PT.set_max_print_failures(2)
             @test printfunc(1:9, f) == "\n[1]: 1\n⋮\n[9]: 9"
 
-            TM.set_max_print_failures(1)
+            PT.set_max_print_failures(1)
             @test printfunc(1:9, f, "*") == "\n*[1]: 1\n*⋮"
 
-            TM.set_max_print_failures(0)
+            PT.set_max_print_failures(0)
             @test printfunc(1:9, f) == ""
 
-            TM.set_max_print_failures(10)
+            PT.set_max_print_failures(10)
         end
 
         @testset "NonBoolTypeError" begin
 
-            f = evaled -> destyle(TM.NonBoolTypeError(evaled).msg)
+            f = evaled -> destyle(PT.NonBoolTypeError(evaled).msg)
 
             # Non-array
             @test f(1) == "1 ===> Int64"
@@ -779,7 +779,7 @@
     @testset "eval_test_all()" begin
 
         @testset "method error when evaling all()" begin
-            f = (evaled) -> TM.eval_test_all(evaled, [evaled], "", LineNumberNode(1))
+            f = (evaled) -> PT.eval_test_all(evaled, [evaled], "", LineNumberNode(1))
             cases = [
                 :a,     
                 TestStruct(1,1)
@@ -790,7 +790,7 @@
         end
 
         @testset "non-Boolean in evaled argument" begin
-            f = (evaled) -> TM.eval_test_all(evaled, [evaled], "", LineNumberNode(1))
+            f = (evaled) -> PT.eval_test_all(evaled, [evaled], "", LineNumberNode(1))
             cases = [
                 1, 
                 1:3, 
@@ -798,12 +798,12 @@
                 [TestStruct(1,1), false], 
             ]
             @testset "evaled: $case" for case in cases
-                @test_throws TM.NonBoolTypeError f(case)
+                @test_throws PT.NonBoolTypeError f(case)
             end
         end
 
         @testset "passing all()" begin
-            f = (evaled) -> TM.eval_test_all(evaled, [evaled], "", LineNumberNode(1))
+            f = (evaled) -> PT.eval_test_all(evaled, [evaled], "", LineNumberNode(1))
             cases = [
                 true, 
                 [true, true], 
@@ -822,7 +822,7 @@
         end
 
         f = (evaled, terms, fmt) -> begin 
-            res = TM.eval_test_all(evaled, terms, fmt, LineNumberNode(1))
+            res = PT.eval_test_all(evaled, terms, fmt, LineNumberNode(1))
             @assert res isa Test.Returned
             return destyle(res.data)
         end

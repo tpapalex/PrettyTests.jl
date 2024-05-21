@@ -1,14 +1,14 @@
 ## Macros
 
 ```@docs
-TestMacroExtensions.@test_sets
-TestMacroExtensions.@test_all
+PrettyTests.@test_sets
+PrettyTests.@test_all
 ```
 
 ## Display settings
 
 ```@docs
-TestMacroExtensions.set_max_print_failures
-TestMacroExtensions.disable_failure_styling
-TestMacroExtensions.enable_failure_styling
+PrettyTests.set_max_print_failures
+PrettyTests.disable_failure_styling
+PrettyTests.enable_failure_styling
 ```

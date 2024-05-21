@@ -213,10 +213,10 @@ interpreted as a set-like comparison:
 - `L ∩ R` or `L || R` expands to `isdisjoint(L, R)`
 
 If executed inside a [`Test.@testset`](@extref Julia), return a [`Test.Pass`]
-(@extref Julia) result if it does, a [`Test.Fail`](@extref Julia) result if it is
-`false`, and an [`Test.Error`](@extref Julia) result if it could not 
-be evaluated. If executed outside a `@testset`, throw an exception instead of 
-returning `Test.Fail` or `Test.Error`.
+(@extref Julia) result if the expanded expression evaluates to `true`, a 
+[`Test.Fail`](@extref Julia) result if it is `false`, and an [`Test.Error`](@extref Julia)
+result if it could not be evaluated. If executed outside a `@testset`, throw an exception 
+instead of returning `Test.Fail` or `Test.Error`.
 
 You can use any `L` and `R` that work with the expanded expressions above (including 
 tuples, arrays, sets, dictionaries, strings, and more generable iterables). The `∅` 

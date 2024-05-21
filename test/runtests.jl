@@ -1,10 +1,10 @@
-using TestMacroExtensions
+using PrettyTests
 using Test
 
-const TM = TestMacroExtensions
-TM.disable_failure_styling() # Will be enabled for some tests, but mostly don't want for tests
+const PT = PrettyTests
+PT.disable_failure_styling() # Will be enabled for some tests, but mostly don't want for tests
 
-@testset "TestMacroExtensions.jl" begin
+@testset "PrettyTests.jl" begin
     include("nothrowtestset.jl") # structs used in testing of test macros
 
     include("helpers.jl")

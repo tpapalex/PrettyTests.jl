@@ -1,4 +1,4 @@
-name = "TestMacroExtensions"
+name = "PrettyTests"
 uuid = "ecd20d55-42c1-4d31-a87b-fff5cebab0b6"
 authors = ["Ted Papalexopoulos"]
 version = "0.1.0"

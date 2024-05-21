@@ -683,17 +683,15 @@ end
     @test_all ex broken=true
     @test_all ex skip=true
 
-Test that the expression `all(ex)` evaluates to `true`.
+Test that the expression `all(ex)` evaluates to `true`. Unlike `@test all(ex)`, 
+evaluation of `ex` will not short-circuit at the first `false` value, so that all
+elements that were `false` will be displayed in the failure message.
 
 If executed inside a [`Test.@testset`](@extref Julia), return a [`Test.Pass`]
-(@extref Julia) result if it does, a [`Test.Fail`](@extref Julia) result if it is
-`false` or `missing`, and an [`Test.Error`](@extref Julia) result if it could not 
-be evaluated. If executed outside a `@testset`, throw an exception instead of 
+(@extref Julia) result if `all(ex)` evaluates to `true`, a [`Test.Fail`](@extref Julia)
+result if it is `false` or `missing`, and an [`Test.Error`](@extref Julia) result if it 
+could not be evaluated. If executed outside a `@testset`, throw an exception instead of 
 returning `Test.Fail` or `Test.Error`.
-
-Unlike `@test all(ex)`, evaluation of `ex` will not short-circuit at the first `false`
-value. All elements of `ex` are evaluated, so that all values that were `false` or 
-`missing` can be shown in the failure message.    
 
 # Examples
 ```jldoctest; filter = r"(\\e\\[\\d+m|\\s+|ERROR.*)"
@@ -712,7 +710,6 @@ Test Failed at none:1
 Similar to [`@test](@extref Julia Test.@test), the `@test_all f(args...) key=val...` form
 is equivalent to writing `@test_all f(args...; key=val...)` which can be useful when the
 expression is a call using infix syntax such as vectorized approximate comparisons: 
-
 
 ```jldoctest approx; filter = r"(\\e\\[\\d+m|\\s+|ERROR.*)"
 julia> v = [0.99, 1.0, 1.01];

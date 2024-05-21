@@ -1,10 +1,10 @@
 ```@meta
-CurrentModule = TestMacroExtensions
+CurrentModule = PrettyTests
 ```
 
 # Home
 
-This [TestMacroExtensions](https://github.com/tpapalex/TestMacroExtensions.jl) package
+This [PrettyTests](https://github.com/tpapalex/PrettyTests.jl) package
 extends Julia's basic unit-testing functionality by providing drop-in replacements
 for [`Test.@test`](@extref Julia) with more informative, human-readable failure messages.
 
@@ -26,9 +26,9 @@ In the simplest example, one could test for set equality with the (overloaded) `
 operator:
 
 ```@setup test_sets
-using TestMacroExtensions, Test 
-TestMacroExtensions.enable_failure_styling()
-TestMacroExtensions.set_max_print_failures(10)
+using PrettyTests, Test 
+PrettyTests.enable_failure_styling()
+PrettyTests.set_max_print_failures(10)
 
 mutable struct JustPrintTestSet <: Test.AbstractTestSet
     results::Vector
@@ -78,7 +78,7 @@ end # hide
 
 !!! info "Disable color output"
     To disable colored subexpressions in failure messages use [`disable_failure_styling()`]
-    (@ref TestMacroExtensions.disable_failure_styling).
+    (@ref PrettyTests.disable_failure_styling).
 
 The symbol `∅` can be used as shorthand for `Set()` in the place of either `L` or `R`:
 
@@ -162,9 +162,9 @@ The [`@test_all`](@ref) macro functions as a drop-in replacement for "vectorized
 `@test_all ex` will (mostly) behave like `@test all(ex)`:
 
 ```@setup test_all
-using TestMacroExtensions, Test 
-TestMacroExtensions.enable_failure_styling()
-TestMacroExtensions.set_max_print_failures(10)
+using PrettyTests, Test 
+PrettyTests.enable_failure_styling()
+PrettyTests.set_max_print_failures(10)
 
 mutable struct JustPrintTestSet <: Test.AbstractTestSet
     results::Vector
@@ -232,14 +232,13 @@ ommitted the summary/indexing and printed just the single failure under `Argumen
 
 !!! info "Disable color output"
     To disable colored subexpressions in failure messages use [`disable_failure_styling()`]
-    (@ref TestMacroExtensions.disable_failure_styling).
+    (@ref PrettyTests.disable_failure_styling).
 
 
 !!! note "Why not `@testset` for ...?"
-    One could achieve a similar results to `@test_all` by just using built-in
-    [`Test`](@extref Julia stdlib/Test) syntax like [`@testset for`]
-    (@extref Julia Test.@testset). The test `@test_all a .< 2` is basically
-    equivalent to:
+    One could achieve a similar effect to `@test_all` by using the [`@testset for`]
+    (@extref Julia Test.@testset) built in to [`Test`](@extref Julia stdlib/Test). 
+    The test `@test_all a .< 2` is basically equivalent to:
 
     ```@julia
     @testset for i in eachindex(a)
@@ -260,8 +259,8 @@ ommitted the summary/indexing and printed just the single failure under `Argumen
 ### Broadcasting behavior
 
 Expressions that involve more complicated broadcasting behaviour are also nicely
-formatted. If the expression evaluates to a matrix, individual failures are identified by
-their [`CartesianIndex`](@extref Julia Cartesian-indices):
+formatted. If the expression evaluates to a higher-dimensional array (e.g. matrix),
+individual failures are identified by their [`CartesianIndex`](@extref Julia Cartesian-indices):
 
 ```@repl test_all
 @testset JustPrintTestSet begin # hide
@@ -298,7 +297,7 @@ end # hide
     collectively [`broadcast`](@extref Julia Base.Broadcast.broadcast), so that
     elements can splatted into the format string at each failing index.
 
-    *Note:* No unvectorized forms are not considered displayable by the parser. 
+    *Note:* Unvectorized forms are not considered displayable by the parser. 
     This is to avoid certain ambiguities with broadcasting under the current
     implementation. This may be changed in future.
 
@@ -313,15 +312,15 @@ end # hide
 
     In this example, the parser first receives the top-level expression
     `(x .< y) .& (x < y)`, which it knows to display as `$f1 & $f2` in unvectorized form. 
-    The sub-format strings `f1` and `f2` msu then be determined by recursively parsing 
+    The sub-format strings `f1` and `f2` must then be determined by recursively parsing 
     the expressions on either side of `.&`. 
 
-    On the left side, the sub-expression `x .< y` is also displayable as `($f11 < $f12)`, 
-    with further recursion required to get `f11` and `f12`. At these next levels of
-    recursion, the parser hits the base case since neither `x` nor `y` are displayable
-    forms. The two sub-expressions are thus escaped, to be used as the first and second
-    arguments to an eventual broadcast call. The corresponding "simple" format strings
-    `{1:s}` and `{2:s}` are passed back up the recursion, to create `f1` as `({1:s} < {2:s})`.
+    On the left side, the sub-expression `x .< y` is also displayable as `($f11 < $f12)`
+    with format strings `f11` and `f22` given by further recursion. At this level, the 
+    parser hits the base case, since neither `x` nor `y` are displayable forms. The two
+    expressions are escaped and used as the first and second broadcast arguments, while
+    the corresponding format strings `{1:s}` and `{2:s}` are passed back up the recursion
+    to create `f1` as `({1:s} < {2:s})`.
 
     On the right side, `x < y` is *not* displayable (since it is unvectorized) and 
     therefore escaped as whole to make the third broadcasted argument. The corresponding
@@ -329,7 +328,7 @@ end # hide
 
     By the end, the parser has created the format string is `({1:s} < {2:s}) & {3:s}`, 
     with three corresponding expressions `x`, `y`, and `x < y`. Evaluating and collectively 
-    broadcasting these results in the scalar 3-tuple `(2, 1, false)`, which matches the
+    broadcasting the latter results in the scalar 3-tuple `(2, 1, false)`, which matches the
     dimension of the evaluated expression (`false`). Since this is a failure, the 3-tuple
     is splatted into the format string to create the part of the message that reads
     `(2 < 1) & false`.
@@ -496,9 +495,9 @@ end # hide
 ## `Test` integrations
 
 ```@setup integration
-using TestMacroExtensions, Test 
-TestMacroExtensions.enable_failure_styling()
-TestMacroExtensions.set_max_print_failures(10)
+using PrettyTests, Test 
+PrettyTests.enable_failure_styling()
+PrettyTests.set_max_print_failures(10)
 
 mutable struct JustPrintTestSet <: Test.AbstractTestSet
     results::Vector
@@ -516,7 +515,7 @@ end
 Test.finish(ts::JustPrintTestSet) = nothing
 ```
 
-A core feature of `TestMacroExtensions` is that its macros integrate seamlessly with
+A core feature of `PrettyTests` is that its macros integrate seamlessly with
 Julia's standard [unit-testing framework](@extref Julia stdlib/Test). This stems primarily
 from the fact that they return one of the standard [`Test.Result`](@extref Julia) objects
 defined therein, namely:

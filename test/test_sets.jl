@@ -3,13 +3,13 @@
     @testset "printing utilities" begin
 
         @testset "printL/R" begin
-            fLR = (args...) -> destyle(sprint(TM.printLsepR, args...))
+            fLR = (args...) -> destyle(sprint(PT.printLsepR, args...))
             @test fLR("L", "sep", "R") == "L sep R"
             @test fLR("L", "sep", "R", " suffix") == "L sep R suffix"
         end
 
         @testset "printset()" begin
-            f = v -> sprint(TM.printset, v, "set", context = TM.failure_ioc())
+            f = v -> sprint(PT.printset, v, "set", context = PT.failure_ioc())
 
             @test contains(f([1]), "set has 1 element:  [1]")
             @test contains(f([2,3]), "set has 2 elements: [2, 3]")
@@ -22,7 +22,7 @@
         end
 
         @testset "stringify_expr_test_sets()" begin
-            f = TM.stringify_expr_test_sets
+            f = PT.stringify_expr_test_sets
             @test f(:(a == b)) == "a == b"
             @test f(:(a ≠ b)) == "a ≠ b"
             @test f(:(a ⊆ b)) == "a ⊆ b"
@@ -35,10 +35,10 @@
             @test f(:([1,2] ∩ [3,4])) == "[1, 2] ∩ [3, 4] == ∅"
 
             # Check that output is styled
-            TM.enable_failure_styling()
+            PT.enable_failure_styling()
             @test ansioccursin("\ea\e == \eb\e", f(:(a == b)))
             @test ansioccursin("\eset\e ∩ \earr\e == ∅", f(:(set ∩ arr)))
-            TM.disable_failure_styling()
+            PT.disable_failure_styling()
         end
 
     end
@@ -69,7 +69,7 @@
             ]
 
             @testset "$ex" for (ex, res) in cases
-                @test TM.process_expr_test_sets(ex) == res
+                @test PT.process_expr_test_sets(ex) == res
             end
         end
 
@@ -82,7 +82,7 @@
                 :(a | b)
             ]
             @testset "$ex" for ex in cases
-                @test_throws "unsupported set operator" TM.process_expr_test_sets(ex)
+                @test_throws "unsupported set operator" PT.process_expr_test_sets(ex)
             end
         end
 
@@ -93,7 +93,7 @@
                 :(g(a, b)),
             ]
             @testset "$ex" for ex in cases
-                @test_throws "invalid test macro call: @test_set" TM.process_expr_test_sets(ex)
+                @test_throws "invalid test macro call: @test_set" PT.process_expr_test_sets(ex)
             end
         end
     end
@@ -101,7 +101,7 @@
     @testset "eval_test_sets()" begin
 
         @testset "op: ==" begin
-            f = (lhs, rhs) -> TM.eval_test_sets(lhs, :(==), rhs, LineNumberNode(1))
+            f = (lhs, rhs) -> PT.eval_test_sets(lhs, :(==), rhs, LineNumberNode(1))
 
             res = f(Set([1,2,3]), [1,2,3])
             @test res.value === true
@@ -123,7 +123,7 @@
         end
 
         @testset "op: ≠" begin
-            f = (lhs, rhs) -> TM.eval_test_sets(lhs, :≠, rhs, LineNumberNode(1))
+            f = (lhs, rhs) -> PT.eval_test_sets(lhs, :≠, rhs, LineNumberNode(1))
 
             res = f([1,2,3], Set([1,2]))
             @test res.value === true
@@ -143,7 +143,7 @@
         end
 
         @testset "op: ⊆" begin
-            f = (lhs, rhs) -> TM.eval_test_sets(lhs, :⊆, rhs, LineNumberNode(1))
+            f = (lhs, rhs) -> PT.eval_test_sets(lhs, :⊆, rhs, LineNumberNode(1))
 
             res = f([1,2,3], [1,2,3])
             @test res.value === true
@@ -166,7 +166,7 @@
         end
 
         @testset "op: ⊇" begin
-            f = (lhs, rhs) -> TM.eval_test_sets(lhs, :⊇, rhs, LineNumberNode(1))
+            f = (lhs, rhs) -> PT.eval_test_sets(lhs, :⊇, rhs, LineNumberNode(1))
 
             res = f([1,2,3], [1,2,3])
             @test res.value === true
@@ -189,7 +189,7 @@
         end
 
         @testset "op: ⊊" begin
-            f = (lhs, rhs) -> TM.eval_test_sets(lhs, :⊊, rhs, LineNumberNode(1))
+            f = (lhs, rhs) -> PT.eval_test_sets(lhs, :⊊, rhs, LineNumberNode(1))
 
             res = f([1,2], [1,2,3])
             @test res.value === true
@@ -214,7 +214,7 @@
         end
 
         @testset "op: ⊋" begin
-            f = (lhs, rhs) -> TM.eval_test_sets(lhs, :⊋, rhs, LineNumberNode(1))
+            f = (lhs, rhs) -> PT.eval_test_sets(lhs, :⊋, rhs, LineNumberNode(1))
 
             res = f([1,2,3], [1,2])
             @test res.value === true
@@ -239,7 +239,7 @@
         end
 
         @testset "op: ∩" begin
-            f = (lhs, rhs) -> TM.eval_test_sets(lhs, :∩, rhs, LineNumberNode(1))
+            f = (lhs, rhs) -> PT.eval_test_sets(lhs, :∩, rhs, LineNumberNode(1))
 
             res = f([1,2,3], [4,5])
             @test res.value === true
@@ -263,8 +263,8 @@
 
         @testset "styling" begin
             # Brief examples to test styling
-            TM.enable_failure_styling()
-            f = (lhs, op, rhs) -> TM.eval_test_sets(lhs, op, rhs, LineNumberNode(1)).data
+            PT.enable_failure_styling()
+            f = (lhs, op, rhs) -> PT.eval_test_sets(lhs, op, rhs, LineNumberNode(1)).data
 
             @test ansioccursin("\eL\e and \eR\e are not equal.", f([1,2], :(==), [2,3]))  
             @test ansioccursin("\eL\e and \eR\e are equal.", f([1,2], :≠, [2,1]))
@@ -276,7 +276,7 @@
             @test ansioccursin("\eL\e is not a proper superset of \eR\e.", f([1,2], :⊋, [2,3]))
             @test ansioccursin("\eL\e and \eR\e are not disjoint.", f([1,2], :∩, [2,3]))
 
-            TM.disable_failure_styling()
+            PT.disable_failure_styling()
         end
     end
 

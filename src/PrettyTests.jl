@@ -1,4 +1,4 @@
-module TestMacroExtensions
+module PrettyTests
     using Test, Format
     
     import Test: ExecutionResult, Returned, Threw, Broken
