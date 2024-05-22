@@ -15,7 +15,6 @@ jobs:
   test:
     name: Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
     runs-on: ${{ matrix.os }}
-    continue-on-error: ${{ matrix.allow_failure }}
     timeout-minutes: 60
     permissions: # needed to allow julia-actions/cache to proactively delete old caches that it has created
       actions: write
@@ -26,24 +25,16 @@ jobs:
         version: ['1.7.3', '1.8', '1.9', '1.10', '1']
         os: [ubuntu-latest]        
         arch: [x64]
-        allow_failure: [false]
         include:
-          - os: ubuntu-latest
-            version: 'nightly'
-            arch: x64
-            allow_failure: true
           - os: ubuntu-latest
             version: '1'
             arch: x86
-            allow_failure: false
           - os: windows-latest
             version: '1'
             arch: x64
-            allow_failure: false
           - os: macos-latest
             version: '1'
             arch: x64
-            allow_failure: false
     steps:
       - uses: actions/checkout@v4
       - uses: julia-actions/setup-julia@v2
