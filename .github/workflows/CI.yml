@@ -86,4 +86,4 @@ jobs:
           DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
       - name: Run doctests
         shell: julia --project=docs --color=yes {0}
-        run: julia --project=docs/ docs/make.jl
+        run: julia --project=docs docs/make.jl
