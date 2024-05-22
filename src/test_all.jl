@@ -72,7 +72,7 @@ function pushkeywords!(ex, kws...)
             kw.head = :kw
             push!(args, kw)
         else
-            error("invalid test macro call: $kw is not valid keyword synt")
+            error("invalid test macro call: $kw is not valid keyword syntax")
         end
     end
 

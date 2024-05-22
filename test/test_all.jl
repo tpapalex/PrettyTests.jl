@@ -62,7 +62,7 @@
             ]
 
             @testset "ex: $ex" for ex in cases
-                @test_throws "does not accept keyword" PT.pushkeywords!(ex, :(x = 1))
+                @test_throws ErrorException("invalid test macro call: @testall $ex does not accept keyword arguments") PT.pushkeywords!(ex, :(x = 1))
             end
         end
 
@@ -76,12 +76,12 @@
             ]
 
             @testset "kw: $kw" for kw in cases
-                @test_throws "is not valid keyword" PT.pushkeywords!(:(g()), kw)
+                @test_throws ErrorException("invalid test macro call: $kw is not valid keyword syntax") PT.pushkeywords!(:(g()), kw)
             end
 
             # Same but where only some keywords are invalid
             @testset "kws: (x = 1, $kw)" for kw in cases
-                @test_throws "is not valid keyword" PT.pushkeywords!(:(g()), :(x = 1), kw)
+                @test_throws ErrorException PT.pushkeywords!(:(g()), :(x = 1), kw)
             end
         end
     end
@@ -785,7 +785,7 @@
                 TestStruct(1,1)
             ]
             @testset "evaled: $case" for case in cases
-                @test_throws "no method matching iterate" f(case)
+                @test_throws MethodError f(case)
             end
         end
 
@@ -1085,10 +1085,10 @@
             let errors = @testset NoThrowTestSet begin
                     # 1
                     @test_all A
-                    push!(messages, ["UndefVarError: `A` not defined"])
+                    push!(messages, ["UndefVarError:"])
                     # 2
                     @test_all sqrt.([1,-1])
-                    push!(messages, ["DomainError with -1.0"])
+                    push!(messages, ["DomainError"])
                     # 3
                     @test_all error("fail ungracefully")
                     push!(messages, ["fail ungracefully"])

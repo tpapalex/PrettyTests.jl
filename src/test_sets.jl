@@ -90,7 +90,11 @@ function process_expr_test_sets(ex)
         op, L, R = ex.args
         op = get(OPS_SETCOMP_CONVERTER, op, op)
         if op ∉ OPS_SETCOMP
-            error("invalid test macro call: @test_set unsupported set operator $op")
+            if Meta.isoperator(op)
+                error("invalid test macro call: @test_set unsupported set operator $op")
+            else
+                error("invalid test macro call: @test_set $ex")
+            end
         end
     elseif isexpr(ex, :||, 2)
         op = :∩
@@ -116,6 +120,10 @@ function eval_test_sets(L, op, R, source)
         res = !issetequal(L, R)
     elseif op === :∩
         res = isdisjoint(L, R)
+    elseif op === :⊊
+        res = issubset(L, R) && !issetequal(L, R)
+    elseif op === :⊋
+        res = issubset(R, L) && !issetequal(L, R)
     else
         res = eval(op)(L, R)
     end

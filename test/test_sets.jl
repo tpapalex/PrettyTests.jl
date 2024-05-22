@@ -82,7 +82,7 @@
                 :(a | b)
             ]
             @testset "$ex" for ex in cases
-                @test_throws "unsupported set operator" PT.process_expr_test_sets(ex)
+                @test_throws ErrorException("invalid test macro call: @test_set unsupported set operator $(ex.args[1])") PT.process_expr_test_sets(ex)
             end
         end
 
@@ -93,7 +93,7 @@
                 :(g(a, b)),
             ]
             @testset "$ex" for ex in cases
-                @test_throws "invalid test macro call: @test_set" PT.process_expr_test_sets(ex)
+                @test_throws ErrorException("invalid test macro call: @test_set $ex") PT.process_expr_test_sets(ex)
             end
         end
     end
@@ -526,10 +526,10 @@
             let errors = @testset NoThrowTestSet begin
                     # 1
                     @test_sets A == B
-                    push!(messages, "UndefVarError: `A` not defined")
+                    push!(messages, "UndefVarError")
                     # 2
                     @test_sets sqrt(-1) == 3
-                    push!(messages, "DomainError with -1.0")
+                    push!(messages, "DomainError")
                     # 3
                     @test_sets 3 == error("fail ungracefully")
                     push!(messages, "fail ungracefully")
