@@ -86,4 +86,8 @@ jobs:
           DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
       - name: Run doctests
         shell: julia --project=docs --color=yes {0}
-        run: julia --project=docs docs/make.jl
+        run: |
+          using Documenter: DocMeta, doctest
+          using PrettyTests
+          DocMeta.setdocmeta!(PrettyTests, :DocTestSetup, :(using PrettyTests; PrettyTests.disable_failure_styling()); recursive=true)
+          doctest(PrettyTests)
