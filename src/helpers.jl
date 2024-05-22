@@ -64,7 +64,7 @@ globally for all subsequent tests, or until the function is called again.
 The function returns the previous value of `n` so that it can be restored if desired.
 
 # Examples
-```jldoctest; setup = (using PrettyTests: set_max_print_failures)
+```
 julia> @test_all 1:3 .== 0
 Test Failed at none:1
   Expression: all(1:3 .== 0)
