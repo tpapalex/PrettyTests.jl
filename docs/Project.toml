@@ -4,3 +4,6 @@ Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 DocumenterInterLinks = "d12716ef-a0f6-4df4-a9f1-a5a34e75c656"
 LiveServer = "16fef848-5104-11e9-1b77-fb7a48bbb589"
 PrettyTests = "ecd20d55-42c1-4d31-a87b-fff5cebab0b6"
+
+[compat]
+Documenter = "1.4"

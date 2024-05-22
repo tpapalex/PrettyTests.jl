@@ -30,6 +30,5 @@ makedocs(;
 )
 
 deploydocs(;
-    repo="github.com/tpapalex/PrettyTests.jl",
-    devbranch="main",
+    repo="github.com/tpapalex/PrettyTests.jl"
 )
