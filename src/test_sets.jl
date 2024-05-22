@@ -250,7 +250,7 @@ See also: [`Base.issetequal`](@extref Julia), [`Base.issubset`](@extref Julia),
 
 # Examples 
 
-```jldoctest; filter = r"(\\e\\[\\d+m|\\s+)"
+```jldoctest
 julia> @test_sets (1, 2) == (2, 1, 1, 1)
 Test Passed
 
@@ -281,7 +281,7 @@ to [`Test.@test`](@extref Julia):
 
 # Examples
 
-```jldoctest; filter = r"(\\e\\[\\d+m|\\s+|ERROR.*)"
+```jldoctest
 julia> @test_sets [1] ⊆ [2, 3] broken=true
 Test Broken
   Expression: [1] ⊆ [2, 3]

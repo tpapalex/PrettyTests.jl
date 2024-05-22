@@ -694,7 +694,7 @@ could not be evaluated. If executed outside a `@testset`, throw an exception ins
 returning `Test.Fail` or `Test.Error`.
 
 # Examples
-```jldoctest; filter = r"(\\e\\[\\d+m|\\s+|ERROR.*)"
+```jldoctest
 julia> @test_all [1.0, 2.0] .== [1, 2]
 Test Passed
 
@@ -707,11 +707,11 @@ Test Failed at none:1
               [3]: 3 < 2 ===> false
 ```
 
-Similar to [`@test](@extref Julia Test.@test), the `@test_all f(args...) key=val...` form
+Similar to [`@test`](@extref Julia Test.@test), the `@test_all f(args...) key=val...` form
 is equivalent to writing `@test_all f(args...; key=val...)` which can be useful when the
 expression is a call using infix syntax such as vectorized approximate comparisons: 
 
-```jldoctest approx; filter = r"(\\e\\[\\d+m|\\s+|ERROR.*)"
+```jldoctest approx
 julia> v = [0.99, 1.0, 1.01];
 
 julia> @test_all v .≈ 1 atol=0.1
@@ -721,13 +721,14 @@ Test Passed
 This is equivalent to the uglier test `@test_all .≈(v, 1, atol=0.1)`. 
 Keyword splicing also works through any negation operator:
 
-```jldoctest approx; filter = r"(\\e\\[\\d+m|\\s+|ERROR.*)"
+```jldoctest approx
 julia> @test_all .!(v .≈ 1) atol=0.001
 Test Failed at none:1
   Expression: all(.!.≈(v, 1, atol=0.001))
    Evaluated: false
-    Argument: 3-element BitVector, 1 failure: 
+    Argument: 3-element BitVector, 1 failure:
               [2]: !≈(1.0, 1, atol=0.001) ===> false
+
 ```
 
 As with `@test`, it is an error to supply more than one expression unless 
@@ -737,7 +738,7 @@ assignments (`k=v`).
 The macro supports `broken=true` and `skip=true` keywords, with similar behavior 
 to [`Test.@test`](@extref Julia):
 
-```jldoctest; filter = r"(\\e\\[\\d+m|\\s+|ERROR.*)"
+```jldoctest
 julia> @test_all [1, 2] .< 2 broken=true
 Test Broken
   Expression: all([1, 2] .< 2)

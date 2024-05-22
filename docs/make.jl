@@ -2,7 +2,7 @@ using PrettyTests
 using Documenter
 using DocumenterInterLinks
 
-DocMeta.setdocmeta!(PrettyTests, :DocTestSetup, :(using PrettyTests); recursive=true)
+DocMeta.setdocmeta!(PrettyTests, :DocTestSetup, :(using PrettyTests; PrettyTests.disable_failure_styling()); recursive=true)
 
 links = InterLinks(
     "Julia" => "https://docs.julialang.org/en/v1/", 

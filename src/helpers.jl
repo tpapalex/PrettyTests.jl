@@ -64,12 +64,12 @@ globally for all subsequent tests, or until the function is called again.
 The function returns the previous value of `n` so that it can be restored if desired.
 
 # Examples
-```jldoctest; filter = r"(\\e\\[\\d+m|\\s+|ERROR.*)",setup = (using PrettyTests: set_max_print_failures)
+```jldoctest; setup = (using PrettyTests: set_max_print_failures)
 julia> @test_all 1:3 .== 0
 Test Failed at none:1
   Expression: all(1:3 .== 0)
    Evaluated: false
-    Argument: 3-element BitVector, 3 failures: 
+    Argument: 3-element BitVector, 3 failures:
               [1]: 1 == 0 ===> false
               [2]: 2 == 0 ===> false
               [3]: 3 == 0 ===> false

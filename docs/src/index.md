@@ -545,10 +545,11 @@ end #hide
 
 ### Working with `@testset`
 
-They macros also automatically run [`Test.record(`](@extref Julia Test.record)[`Test.get_testset()`]
-(@extref Julia Test.get_testset)[`, result)`](@extref Julia Test.record) so that they 
+The macros also automatically run [`Test.record(`](@extref Julia Test.record)[`Test.get_testset()`]
+(@extref Julia Test.get_testset)[`, result)`](@extref Julia Test.record) so that they
 play nicely with both built-in and user-defined [`AbstractTestSet`]
-(@extref Julia Creating-Custom-AbstractTestSet-Types) types:
+(@extref Julia Creating-Custom-AbstractTestSet-Types) types. In particular, they will register inside an [`@testset`]
+(@extref Julia Test.@testset):
 
 ```@repl integration
 @testset "MyTestSet" begin
