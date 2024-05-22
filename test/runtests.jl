@@ -1,4 +1,5 @@
 using PrettyTests
+using PrettyTests
 using Test
 
 const PT = PrettyTests

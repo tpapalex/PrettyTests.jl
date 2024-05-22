@@ -1,4 +1,5 @@
 using PrettyTests
+using PrettyTests
 using Documenter
 using DocumenterInterLinks
 
@@ -10,7 +11,6 @@ DocMeta.setdocmeta!(PrettyTests, :DocTestSetup, :(using PrettyTests); recursive=
 
 links = InterLinks(
     "Julia" => "https://docs.julialang.org/en/v1/", 
-    "numpy" => "https://numpy.org/doc/stable/"
 );
 
 makedocs(;
