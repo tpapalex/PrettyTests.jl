@@ -1,4 +1,4 @@
-module TestMacroExtensions
+module PrettyTests
 
 # Write your package code here.
 

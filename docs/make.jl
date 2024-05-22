@@ -1,14 +1,14 @@
-using TestMacroExtensions
+using PrettyTests
 using Documenter
 
-DocMeta.setdocmeta!(TestMacroExtensions, :DocTestSetup, :(using TestMacroExtensions); recursive=true)
+DocMeta.setdocmeta!(PrettyTests, :DocTestSetup, :(using PrettyTests); recursive=true)
 
 makedocs(;
-    modules=[TestMacroExtensions],
+    modules=[PrettyTests],
     authors="Ted Papalexopoulos",
-    sitename="TestMacroExtensions.jl",
+    sitename="PrettyTests.jl",
     format=Documenter.HTML(;
-        canonical="https://tpapalex.github.io/TestMacroExtensions.jl",
+        canonical="https://tpapalex.github.io/PrettyTests.jl",
         edit_link="main",
         assets=String[],
     ),
@@ -18,6 +18,6 @@ makedocs(;
 )
 
 deploydocs(;
-    repo="github.com/tpapalex/TestMacroExtensions.jl",
+    repo="github.com/tpapalex/PrettyTests.jl",
     devbranch="main",
 )

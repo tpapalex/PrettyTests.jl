@@ -1,6 +1,6 @@
-using TestMacroExtensions
+using PrettyTests
 using Test
 
-@testset "TestMacroExtensions.jl" begin
+@testset "PrettyTests.jl" begin
     # Write your tests here.
 end

@@ -1,14 +1,14 @@
 ```@meta
-CurrentModule = TestMacroExtensions
+CurrentModule = PrettyTests
 ```
 
-# TestMacroExtensions
+# PrettyTests
 
-Documentation for [TestMacroExtensions](https://github.com/tpapalex/TestMacroExtensions.jl).
+Documentation for [PrettyTests](https://github.com/tpapalex/PrettyTests.jl).
 
 ```@index
 ```
 
 ```@autodocs
-Modules = [TestMacroExtensions]
+Modules = [PrettyTests]
 ```
