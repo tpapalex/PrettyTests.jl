@@ -1,13 +1,8 @@
 using PrettyTests
-using PrettyTests
 using Documenter
 using DocumenterInterLinks
 
 DocMeta.setdocmeta!(PrettyTests, :DocTestSetup, :(using PrettyTests); recursive=true)
-
-# makedocs(
-#     sitename="PrettyTests.jl",
-# )
 
 links = InterLinks(
     "Julia" => "https://docs.julialang.org/en/v1/", 
@@ -34,7 +29,7 @@ makedocs(;
     ]
 )
 
-# deploydocs(;
-#     repo="github.com/tpapalex/PrettyTests.jl",
-#     devbranch="main",
-# )
+deploydocs(;
+    repo="github.com/tpapalex/PrettyTests.jl",
+    devbranch="main",
+)
