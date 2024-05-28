@@ -6,6 +6,8 @@ DocMeta.setdocmeta!(PrettyTests, :DocTestSetup, :(using PrettyTests; PrettyTests
 
 links = InterLinks(
     "Julia" => "https://docs.julialang.org/en/v1/", 
+    "numpy" => "https://numpy.org/doc/stable/",
+    "python" => "https://docs.python.org/3/"
 );
 
 makedocs(;

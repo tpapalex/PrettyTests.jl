@@ -21,7 +21,8 @@ const OPS_SETCOMP_CONVERTER = Dict(
 )
 
 #################### Pretty printing utilities ###################
-const _INDENT_SETOP = "              "; # Match indentation of @test "Evaluated: " line
+# Match indentation of @test "Evaluated: " line
+const _INDENT_SETOP = "              "; 
 
 function printLsepR(
         io::IO, 
@@ -77,7 +78,7 @@ end
 # the form `L <op> R` and convert any operator aliases to the canonical version.
 function process_expr_test_sets(ex)
 
-    # Special case in case someone uses `a ∩ b == ∅`
+    # Special case `a ∩ b == ∅` or `∅ == a ∩ b` gets converted to `a ∩ b`
     if isexpr(ex, :call, 3) && ex.args[1] === :(==) 
         if isexpr(ex.args[2], :call, 3) && ex.args[2].args[1] === :∩ && ex.args[3] === :∅
             ex = ex.args[2]
@@ -124,8 +125,12 @@ function eval_test_sets(L, op, R, source)
         res = issubset(L, R) && !issetequal(L, R)
     elseif op === :⊋
         res = issubset(R, L) && !issetequal(L, R)
+    elseif op === :⊆
+        res = issubset(L, R)
+    elseif op === :⊇
+        res = issubset(R, L)
     else
-        res = eval(op)(L, R)
+        error("Unsupported operator $op.")
     end
 
     # If the result is false, create a custom failure message depending on the operator:
@@ -214,17 +219,17 @@ interpreted as a set-like comparison:
 
 - `L == R` expands to `issetequal(L, R)`
 - `L != R` or `L ≠ R` expands to `!issetequal(L, R)`
-- `L ⊆ R` or `L ⊂ R` expands to `⊆(L, R)`
-- `L ⊇ R` or `L ⊃ R` expands to `⊇(L, R)`
-- `L ⊊ R` expands to `⊊(L, R)`
-- `L ⊋ R` expands to `⊋(L, R)`
+- `L ⊆ R` or `L ⊂ R` expands to `issubset(L, R)`
+- `L ⊇ R` or `L ⊃ R` expands to `issubset(R, L)`
+- `L ⊊ R` expands to `issubset(L, R) && !issetequal(L, R)`
+- `L ⊋ R` expands to `issubset(R, L) && !issetequal(L, R)`
 - `L ∩ R` or `L || R` expands to `isdisjoint(L, R)`
 
-If executed inside a [`Test.@testset`](@extref Julia), return a [`Test.Pass`]
-(@extref Julia) result if the expanded expression evaluates to `true`, a 
-[`Test.Fail`](@extref Julia) result if it is `false`, and an [`Test.Error`](@extref Julia)
-result if it could not be evaluated. If executed outside a `@testset`, throw an exception 
-instead of returning `Test.Fail` or `Test.Error`.
+Same return behaviour as [`Test.@test`](@extref Julia), namely: if executed inside a
+`@testset`, returns a `Pass` `Result` if expanded expression evaluates to `true`, a `Fail`
+`Result` if it evaluates to `false`, and an `Error` `Result` if it could not be 
+evaluated. If executed outside a `@testset`, throws an exception instead of returning 
+`Fail` or `Error`.
 
 You can use any `L` and `R` that work with the expanded expressions above (including 
 tuples, arrays, sets, dictionaries, strings, and more generable iterables). The `∅` 
@@ -250,7 +255,7 @@ See also: [`Base.issetequal`](@extref Julia), [`Base.issubset`](@extref Julia),
 
 # Examples 
 
-```
+```@julia-repl
 julia> @test_sets (1, 2) == (2, 1, 1, 1)
 Test Passed
 
@@ -281,7 +286,7 @@ to [`Test.@test`](@extref Julia):
 
 # Examples
 
-```
+```@julia-repl
 julia> @test_sets [1] ⊆ [2, 3] broken=true
 Test Broken
   Expression: [1] ⊆ [2, 3]
