@@ -1,6 +1,4 @@
-#-----------------------------------------------------------------------
-# List of functions whose arguments will be displayed nicely.
-const DISPLAYABLE_FUNCS = (
+const DISPLAYABLE_FUNCS = Set{Symbol}([
     :isequal,
     :isapprox,
     :occursin,
@@ -19,50 +17,46 @@ const DISPLAYABLE_FUNCS = (
     :ifelse,
     :≈, 
     :≉,
-)
-
-# For identifying comparison expressions
+])
 const COMPARISON_PREC = Base.operator_precedence(:(==)) 
-
-# Lists of operators to treat specially
 const OPS_LOGICAL = (:.&, :.|, :.⊻, :.⊽)
 const OPS_APPROX = (:.≈, :.≉)  
 
+@nospecialize
+
 #################### Pre-processing expressions ###################
-# Checks if an operator symbol is vectorized
-function isvecoperator(x::Union{AbstractString,Symbol}) 
-    return Meta.isoperator(x) && first(string(x)) == '.'
-end
+# Functions to preprocess expressions for `@test_all` macro.
 
-# Checks if an argument from  :call or :. expression is not a keyword/parameters/splat
-function ispositionalargexpr(ex)
-    return !isexpr(ex, (:kw, :parameters, :...))
-end
-
-# Get the unvectorized version of vectorized operator as a string,
-function string_unvec(x::Symbol) 
+isvecoperator(x::Symbol) = Meta.isoperator(x) && first(string(x)) == '.'
+function unvecoperator_string(x::Symbol)
     sx = string(x)
-    return sx[1] == '.' ? sx[2:end] : sx 
+    if startswith(sx, ".")
+        return sx[2:end]
+    else
+        return sx
+    end
 end
 
+# Used only on :call or :. args to check if args expression is displayable:
+isdisplayableargexpr(ex) = !isexpr(ex, (:kw, :parameters, :...))
 
-# Preprocess `@testall` expressions of function calls with trailing keyword arguments, 
-# so that e.g. `@testall a .≈ b atol=ε` means `@testall .≈(a, b, atol=ε)`.
+# Preprocess `@test_all` expressions of function calls with trailing keyword arguments, 
+# so that e.g. `@test_all a .≈ b atol=ε` means `@test_all .≈(a, b, atol=ε)`.
 # If `ex` is a negation expression (either a `!` or `.!` call), keyword arguments will 
-# be added to the inner expression, so that `@testall .!(a .≈ b) atol=ε` means 
-# `@testall .!(.≈(a, b, atol=ε))`.
+# be added to the inner expression, so that `@test_all .!(a .≈ b) atol=ε` means 
+# `@test_all .!(.≈(a, b, atol=ε))`.
 pushkeywords!(ex) = ex
 
 function pushkeywords!(ex, kws...)
     # Recursively dive through negations
     orig_ex = ex
-    while isexpr(ex, :call, 2) && (ex.args[1] === :! || ex.args[1] === :.!)
+    if isexpr(ex, :call, 2) && (ex.args[1] === :! || ex.args[1] === :.!)
         ex = ex.args[2]
     end
 
     # Check that inner expression is a :call or :.
     if !isexpr(ex, (:call, :.))
-        error("invalid test macro call: @testall $ex does not accept keyword arguments")
+        error("invalid test macro call: @test_all $ex does not accept keyword arguments")
     end
 
     # Push keywords to the end of arguments as keyword expressions
@@ -79,31 +73,23 @@ function pushkeywords!(ex, kws...)
     return orig_ex
 end
 
-# An internal function, recursively called on the @testall expression to normalize it.
+# An internal function, recursively called on the @test_all expression to normalize it.
 function preprocess_test_all(ex)
 
     # Normalize dot comparison operator calls to :comparison expressions. 
     # Do not if there are extra arguments or there are splats.
     if Meta.isexpr(ex, :call, 3) && 
+        isvecoperator(ex.args[1]::Symbol) && 
         Base.operator_precedence(ex.args[1]) == COMPARISON_PREC &&
-        isvecoperator(ex.args[1]) && 
-        ispositionalargexpr(ex.args[2]) && 
-        ispositionalargexpr(ex.args[3])
+        isdisplayableargexpr(ex.args[2]) && 
+        isdisplayableargexpr(ex.args[3])
         
         ex = Expr(:comparison, ex.args[2], ex.args[1], ex.args[3])
 
-    # Mark .<: and .>: as :comparison expressions
-    elseif Meta.isexpr(ex, :call, 3) && 
-        (ex.args[1] === :.<: || ex.args[1] === :.>:) && 
-        ispositionalargexpr(ex.args[2]) && 
-        ispositionalargexpr(ex.args[3])
-
-        ex = Expr(:comparison, ex.args[2], ex.args[1], ex.args[3])  
-    
     # For displayable :call or :. expressions, push :kw expressions in :parameters to 
     # end of arguments. 
     elseif isexpr(ex, (:call, :.)) && 
-        ((ex.args[1] ∈ OPS_APPROX) || (ex.args[1] ∈ DISPLAYABLE_FUNCS))
+        ((ex.args[1]::Symbol ∈ OPS_APPROX) || (ex.args[1]::Symbol ∈ DISPLAYABLE_FUNCS))
 
         # For :call arguments start at i = 2
         # For :. they start at i = 1, inside the ex.args[2] :tuple expression
@@ -141,53 +127,70 @@ end
 
 #################### Classifying expressions ###################
 # The following internal functions are used to classify expressions into 
-# certain groups that will be displayed differently by `@testall`.
+# certain groups that will be displayed differently by `@test_all`.
 
 # NOT expressions, e.g. !a
-isvecnegationexpr(ex) = isexpr(ex, :call, 2) && ex.args[1] === :.!
+isvecnegationexpr(ex) = isexpr(ex, :call, 2) && ex.args[1]::Symbol === :.!
 
 # Vectorized AND or OR expressions, e.g, a .&& b, a .|| c
-isveclogicalexpr(ex) = isexpr(ex, :call) && ex.args[1] ∈ OPS_LOGICAL
+isveclogicalexpr(ex) = isexpr(ex, :call) && ex.args[1]::Symbol ∈ OPS_LOGICAL
 
-# Most comparison expressions, e.g. a == b, a <= b <= c, a ≈ B. Note that :call
-# expressions with comparison ops are chanegd to :comparison in preprocess_test_all()
+# Vectorized comparison expressions, e.g. a .== b, a .<= b .> c, a .≈ B. Note that :call
+# expressions with comparison ops are changed to :comparison in preprocess_test_all().
 function isveccomparisonexpr(ex)
-    return isexpr(ex, :comparison) && 
-        all(i -> isvecoperator(ex.args[i]), 2:2:length(ex.args))
+    if isexpr(ex, :comparison)
+        for i in 2:2:length(ex.args)
+            if !isvecoperator(ex.args[i]::Symbol)
+                return false
+            end
+        end
+        return true
+    else
+        return false
+    end
 end
 
-# Special case of .≈() or .≉() expression with no splats, for prettier formatting
+# Special case of .≈ or .≉ calls with kws (and no splats), for formatting as comparison
 function isvecapproxexpr(ex)
     return isexpr(ex, :call) && 
-        ex.args[1] ∈ OPS_APPROX &&
-        ispositionalargexpr(ex.args[2]) && 
-        ispositionalargexpr(ex.args[3])        
+        ex.args[1]::Symbol ∈ OPS_APPROX &&
+        isdisplayableargexpr(ex.args[2]) && 
+        isdisplayableargexpr(ex.args[3])        
 end
 
-# Vectorized call of displayable function with no splats
+# Vectorized :. call to displayable function (with no splats)
 function isvecdisplayexpr(ex)
-    return isexpr(ex, :.) && 
-        ex.args[1] ∈ DISPLAYABLE_FUNCS &&
-        sum(a -> isexpr(a, :...), ex.args[2].args, init=0) == 0
+    if isexpr(ex, :., 2) && 
+        ex.args[1]::Symbol ∈ DISPLAYABLE_FUNCS &&
+        isexpr(ex.args[2], :tuple) 
+
+        for a in ex.args[2].args
+            if isexpr(a, :...)
+                return false
+            end
+        end
+        return true
+    else
+        return false
+    end
 end
 
 #################### Pretty-printing utilities ###################
 # An internal, IO-like object, used to dynamically produce a `Format.FormatExpr`-like 
-# string representation of the unvectorized @testall expression, used to pretty print
-# individual failures.
+# string representation of the unvectorized @test_all expression.
 struct Formatter
     ioc::IOContext{IOBuffer}
     parens::Bool
-    Formatter(parens::Bool=true) = new(failure_ioc(), parens)
+    function Formatter(parens::Bool) 
+        ioc = failure_ioc()
+        parens && print(ioc, "(")
+        return new(ioc, parens)
+    end
 end
 
 function stringify!(fmt::Formatter)
-    str = stringify!(fmt.ioc)
-    if fmt.parens 
-        return "($str)"
-    else
-        return str
-    end
+    fmt.parens && print(fmt.ioc, ")")
+    return stringify!(fmt.ioc)
 end
 
 function Base.print(fmt::Formatter, strs::AbstractString...; i::Integer=0)
@@ -207,24 +210,29 @@ function Base.print(fmt::Formatter, s; i::Integer=0)
     print(fmt, string(s); i=i)
 end
 
-# Commonly used indentation levels for pretty printing
+# Matches indenteation of TypeError in @test_all error message
 const _INDENT_TYPEERROR = "            ";
+
+# Matches indenteation of "Evaluated:" expression in @test_all fail message
 const _INDENT_EVALUATED = "              ";
 
 # Stringifies indices returned by findall() for pretty printing
-function stringify_idxs(idxs::AbstractVector) 
-    if eltype(idxs) <: CartesianIndex
-        D = length(idxs[1])
-        max_len = [maximum(idx -> length(string(idx.I[d])), idxs) for d in 1:D]
-        to_str = idx -> join(map(i -> lpad(idx.I[i], max_len[i]), 1:D), ",")
-        return map(to_str, idxs)
-    else
-        ss = string.(idxs)
-        return lpad.(ss, maximum(length, ss))
-    end
+function stringify_idxs(idxs::Vector{CartesianIndex{D}}) where D
+    maxlens = [maximum(idx -> ndigits(idx.I[d]), idxs) for d in 1:D]
+    to_str = idx -> join(map(i -> lpad(idx.I[i], maxlens[i]), 1:D), ",")
+    return map(to_str, idxs)
+end
+function stringify_idxs(idxs::AbstractVector{<:Integer})
+    maxlen = maximum(ndigits, idxs)
+    return lpad.(string.(idxs), maxlen)
+end
+function stringify_idxs(idxs::AbstractVector)
+    ss = string.(idxs)
+    maxlen = maximum(length, ss)
+    return lpad.(ss, maxlen)
 end
 
-# Prints the individual failures in a @testall test, given the indices of the failures
+# Prints the individual failures in a @test_all test, given the indices of the failures
 # and a function to print an individual failure.
 function print_failures(
         io::IO, 
@@ -233,7 +241,7 @@ function print_failures(
         prefix=""
     )
 
-    # Depending on MAX_PRINT_FAILURES, filter the indices to some subset.
+    # Depending on MAX_PRINT_FAILURES, filter the failiing indices to some subset.
     MAX_PRINT_FAILURES[] == 0 && return
     if length(idxs) > MAX_PRINT_FAILURES[]
         i_dots = (MAX_PRINT_FAILURES[] ÷ 2)
@@ -261,7 +269,7 @@ function print_failures(
 end
 
 # An internal exception type, thrown (and later caught by the `Test` infrastructure), when 
-# non-Boolean, non-Missing values are encountered in an evaluated `@testall` expression. 
+# non-Boolean, non-Missing values are encountered in an evaluated `@test_all` expression. 
 # It's constructed directly from the result of evaluting the expression, and pretty-prints
 # the non-Boolean values.
 struct NonBoolTypeError <: Exception
@@ -319,15 +327,18 @@ function Base.showerror(io::IO, err::NonBoolTypeError)
     end
 end
 
-@nospecialize
-
 #################### Escaping arguments ###################
-# Internal functions to process an expression `ex` for use in `@test_all`. It 
-# recursively modifies subexpressions that will be broadcast for pretty-printing by
-# by (i) escaping them and pushing them to `escargs`, and (ii) replacing them with
-# references to `ARG[i]` in the `ex` itself. It does the same with keyword arguments
-# but wraps them in `Ref()` before escaping. It also recursively produces a 
-# `Formatter` object for pretty-printing the broadcasted arguments.
+# Internal functions to process an expression `ex` for use in `@test_all`. Recursively
+# builds `escargs`, the vector of "broadcasted" sub-expressions. Returns a modified
+# expression `ex` with references to `ARG[i]`, and two `Formatter` objects: one with 
+# a pretty-printed string representation of `ex`, and one with python-like format 
+# entries ("{i:s}"), that can be used to pretty-print individual failure messages. 
+# Example: a .== b
+# 1) Adds `a` and `b` as escaped expressions to `escargs`
+# 2) Return [1] is a modified `ex` as `ARG[1] .== ARG[2]`
+# 3) Return [2] a Formatter with the pretty-printed string "a .== b"
+# 4) Return [3] a Formatter with the format string "{1:s} == {2:s}"
+
 function recurse_process!(ex, escargs::Vector{Expr}; outmost::Bool=false)
     ex = preprocess_test_all(ex)
     if isexpr(ex, :kw)
@@ -347,29 +358,11 @@ function recurse_process!(ex, escargs::Vector{Expr}; outmost::Bool=false)
     end
 end
 
-# Expression heads that do not require parenthesizing a broadcasted element coming from
-# them
-const HEADS_NO_PARENS = Set{Symbol}([ 
-    :tuple, 
-    :vcat, 
-    :hcat, 
-    :hcat, 
-    :row, 
-    :vect,
-    :ncat,
-    :nrow,
-    :braces, 
-    :bracescat,
-    :ref,
-    :string,
-    :(::),
-])
-
-
 function recurse_process_basecase!(ex, escargs::Vector{Expr}; outmost::Bool=false)
     # Escape entire expression to args
     push!(escargs, esc(ex))
 
+    # Determine if parens are needed around the pretty-printed expression:
     parens = if outmost
         false
     elseif isexpr(ex, :call) && Meta.isbinaryoperator(ex.args[1]::Symbol)
@@ -392,10 +385,12 @@ function recurse_process_basecase!(ex, escargs::Vector{Expr}; outmost::Bool=fals
         false
     end
 
+    # Pretty-print the expression using Base.show_unquoted for the base-case:
     str = Formatter(parens)
     print(str, sprint(Base.show_unquoted, ex), i=length(escargs))
 
-    # No need for parens in the format because this is an argument that will 
+    # Simplest format string {i:s} for the base-case (no parens since evaluated value
+    # will be printed):
     fmt = Formatter(false)
     print(fmt, "{$(length(escargs)):s}", i=length(escargs))
 
@@ -455,7 +450,7 @@ function recurse_process_logical!(ex::Expr, escargs::Vector{Expr}; outmost::Bool
 
         # Unless it's the first argument, print the operator
         i == 2 || print(str, " ", string(ex.args[1]), " ")
-        i == 2 || print(fmt, " ", string_unvec(ex.args[1]), " ")
+        i == 2 || print(fmt, " ", unvecoperator_string(ex.args[1]), " ")
         print(str, str_arg)
         print(fmt, fmt_arg)
     end
@@ -478,7 +473,7 @@ function recurse_process_comparison!(ex::Expr, escargs::Vector{Expr}; outmost::B
             print(fmt, fmt_arg)
         else # Operator
             print(str, " ", string(ex.args[i]), " ")
-            print(fmt, " ", string_unvec(ex.args[i]), " ")
+            print(fmt, " ", unvecoperator_string(ex.args[i]), " ")
             ex.args[i] = esc(ex.args[i])
         end
     end
@@ -503,11 +498,11 @@ function recurse_process_approx!(ex::Expr, escargs::Vector{Expr}; outmost::Bool=
     fmt = Formatter(false)
     if outmost
         print(fmt, fmt_arg2)
-        print(fmt, " ", string_unvec(ex.args[1]), " ")
+        print(fmt, " ", unvecoperator_string(ex.args[1]), " ")
         print(fmt, fmt_arg3)
         print(fmt, " (")
     else
-        print(fmt, string_unvec(ex.args[1]))
+        print(fmt, unvecoperator_string(ex.args[1]))
         print(fmt, "(")
         print(fmt, fmt_arg2)
         print(fmt, ", ")
@@ -679,22 +674,20 @@ end
 """
     @test_all ex
     @test_all f(args...) key=val ...
-    @test_all .!f(args...) key=val ...
     @test_all ex broken=true
     @test_all ex skip=true
 
-Test that the expression `all(ex)` evaluates to `true`. Unlike `@test all(ex)`, 
-evaluation of `ex` will not short-circuit at the first `false` value, so that all
-elements that were `false` will be displayed in the failure message.
+Test that the expression `all(ex)` evaluates to `true`. Does not short-circuit at 
+the first `false` value, so that all `false` elements are shown in case of failure.
 
-If executed inside a [`Test.@testset`](@extref Julia), return a [`Test.Pass`]
-(@extref Julia) result if `all(ex)` evaluates to `true`, a [`Test.Fail`](@extref Julia)
-result if it is `false` or `missing`, and an [`Test.Error`](@extref Julia) result if it 
-could not be evaluated. If executed outside a `@testset`, throw an exception instead of 
-returning `Test.Fail` or `Test.Error`.
+Same return behaviour as [`Test.@test`](@extref Julia), namely: if executed inside a
+`@testset`, returns a `Pass` `Result` if `all(ex)` evaluates to `true`, a `Fail` `Result`
+if it evaluates to `false` or `missing`, and an `Error` `Result` if it could not be 
+evaluated. If executed outside a `@testset`, throws an exception instead of returning 
+`Fail` or `Error`.
 
 # Examples
-```
+```@julia-repl
 julia> @test_all [1.0, 2.0] .== [1, 2]
 Test Passed
 
@@ -707,11 +700,11 @@ Test Failed at none:1
               [3]: 3 < 2 ===> false
 ```
 
-Similar to [`@test`](@extref Julia Test.@test), the `@test_all f(args...) key=val...` form
-is equivalent to writing `@test_all f(args...; key=val...)` which can be useful when the
-expression is a call using infix syntax such as vectorized approximate comparisons: 
+Similar to `@test`, the `@test_all f(args...) key=val...` form is equivalent to writing 
+`@test_all f(args...; key=val...)` which can be useful when the expression is a call
+using infix syntax such as vectorized approximate comparisons: 
 
-```
+```@julia-repl
 julia> v = [0.99, 1.0, 1.01];
 
 julia> @test_all v .≈ 1 atol=0.1
@@ -721,7 +714,7 @@ Test Passed
 This is equivalent to the uglier test `@test_all .≈(v, 1, atol=0.1)`. 
 Keyword splicing also works through any negation operator:
 
-```
+```@julia-repl
 julia> @test_all .!(v .≈ 1) atol=0.001
 Test Failed at none:1
   Expression: all(.!.≈(v, 1, atol=0.001))
@@ -738,7 +731,7 @@ assignments (`k=v`).
 The macro supports `broken=true` and `skip=true` keywords, with similar behavior 
 to [`Test.@test`](@extref Julia):
 
-```
+```@julia-repl
 julia> @test_all [1, 2] .< 2 broken=true
 Test Broken
   Expression: all([1, 2] .< 2)
@@ -765,6 +758,7 @@ macro test_all(ex, kws...)
     result, str_ex = get_test_all_result(ex, __source__)
     str_ex = "all($str_ex)"
 
+    # Copy `Test` code to create `Test.Result` using `do_test` or `do_broken_test`
     result = quote
         if $(length(skip) > 0 && esc(skip[1]))
             record(get_testset(), Broken(:skipped, $str_ex))
@@ -776,3 +770,5 @@ macro test_all(ex, kws...)
     end
     return result
 end
+
+@specialize
