@@ -4,23 +4,36 @@ CurrentModule = PrettyTests
 
 # Home
 
-This [PrettyTests](https://github.com/tpapalex/PrettyTests.jl) package
-extends Julia's basic unit-testing functionality by providing drop-in replacements
-for [`Test.@test`](@extref Julia) with more informative, human-readable failure messages.
+[PrettyTests](https://github.com/tpapalex/PrettyTests.jl) extends Julia's basic
+unit-testing functionality by providing drop-in replacements for [`Test.@test`]
+(@extref Julia) with more informative error messages.
+
+The inspiration for the package comes from [`python`](@extref python assert-methods)
+and [`numpy` asserts](@extref numpy numpy.testing), which customize their error messages
+depending on the type of test being performed; for example, by showing the
+differences between two sets that should be equal or the number of elements that
+differ in two arrays.
+
+`PrettyTests` macros are designed to (a) provide clear and concise error messages
+tailored to specific situations, and (b) conform with the standard
+[`Test`](@extref Julia stdlib/Test) library interface, so that they can fit into any
+testing workflow. This guide walks through several examples:
 
 ```@contents
 Pages = ["index.md"]
 Depth = 2:3
 ```
 
+The package requires Julia `1.7` or higher, and can be installed in the usual way:
+type `]` to enter the package manager, followed by `add PrettyTests`.
+
 ## `@test_sets` for set-like comparisons
 
 ### Set equality
 
-The [`@test_sets`](@ref) macro functions as a drop-in replacement for [`@test`]
-(@extref Julia Test.@test) when comparing two set-like objects. It accepts expressions
-of the form `@test_sets L <op> R` where `op` is an infix set comparison
-operator, and `L` and `R` are collections, broadly defined.
+The [`@test_sets`](@ref) macro is used to compare two set-like objects.
+It accepts expressions of the form `@test_sets L <op> R`, where `op` is an infix set
+comparison operator and `L` and `R` are collections, broadly defined.
 
 In the simplest example, one could test for set equality with the (overloaded) `==`
 operator:
@@ -53,7 +66,7 @@ a, b = [2, 1, 1], [1, 2];
 end # hide
 ```
 
-This is equivalent to the uglier test `@test issetequal(a, b)`. It is also more
+This is equivalent to the more verbose `@test issetequal(a, b)`. It is also more
 informative in the case of failure:
 
 ```@repl test_sets
@@ -65,8 +78,8 @@ end # hide
 The failed test message lists exactly how many and which elements were in the set
 differences `L \ R` and `R \ L`, which should have been empty in a passing test.
 
-Note how the collections interpreted as `L` and `R` are color-coded,
-so that they can be more easily identified if the expressions are long:
+Note how the collections interpreted as `L` and `R` are color-coded (using ANSI
+color escape codes) so that they can be easily identified if the expressions are long:
 
 ```@repl test_sets
 variable_with_long_name = 1:3;
@@ -80,7 +93,8 @@ end # hide
     To disable colored subexpressions in failure messages use [`disable_failure_styling()`]
     (@ref PrettyTests.disable_failure_styling).
 
-The symbol `∅` can be used as shorthand for `Set()` in the place of either `L` or `R`:
+The symbol `∅` (typed as `\emptyset<tab>`) can be used as shorthand for `Set()` in any 
+set expression:
 
 ```@repl test_sets
 @testset JustPrintTestSet begin # hide
@@ -88,15 +102,14 @@ The symbol `∅` can be used as shorthand for `Set()` in the place of either `L`
 end # hide
 
 @testset JustPrintTestSet begin # hide
-@test_sets Set(1) == ∅
+@test_sets [1,1] == ∅
 end # hide
 ```
 
 Because the macro internally expands the input expression to an
 [`issetequal`](@extref Julia Base.issetequal) call
 (and uses [`setdiff`](@extref Julia Base.setdiff) to print the differences),
-it works very flexibly with general collections, including sets, dictionaries,
-strings, etc:
+it works very flexibly with general collections and iterables:
 
 ```@repl test_sets
 @testset JustPrintTestSet begin # hide
@@ -108,11 +121,11 @@ end # hide
 end # hide
 ```
 
-### Other operators
+### Subsets
 
-Other set comparison tests are also supported, with tailored failure messages.
-For example, the expression `L ⊆ R` is equivalent to `issubset(L, R)`
-[(as it is in base Julia)](@extref Julia Base.issubset):
+Set comparisons beyond equality are also supported, with modified error messages.
+For example, [(as in base Julia)](@extref Julia Base.issubset), the expression `L ⊆ R`
+is equivalent to `issubset(L, R)`:
 
 ```@repl test_sets
 @testset JustPrintTestSet begin # hide
@@ -126,6 +139,8 @@ end # hide
 
 Note how, in this case, the failure displays only the set difference `L \ R` and omits the
 irrelevant `R \ L`.
+
+### Disjointness
 
 The form `L ∩ R == ∅` is equivalent to [`isdisjoint`](@extref Julia Base.isdisjoint)`(L, R)`.
 In the case of failure, the macro displays the non-empty intersection `L ∩ R`, as computed
@@ -157,7 +172,7 @@ end # hide
 
 ### Basic usage
 
-The [`@test_all`](@ref) macro functions as a drop-in replacement for "vectorized"
+The [`@test_all`](@ref) macro is used for "vectorized"
 [`@test`](@extref Julia Test.@test)s. The name derives from the fact that
 `@test_all ex` will (mostly) behave like `@test all(ex)`:
 
@@ -217,6 +232,25 @@ introspection to show an *unvectorized* (and color-coded) form of the expression
 for each individual failure. For example, the failure at index `[4]` was because
 `a[4] = 4`, and `4 < 2` evaluated to `false`.
 
+!!! note "Why not `@testset` for ...?"
+    One could achieve a similar effect to `@test_all` by using the [`@testset for`]
+    (@extref Julia Test.@testset) syntax built in to [`Test`](@extref Julia stdlib/Test).
+    The test `@test_all a .< 2` is basically equivalent to:
+
+    ```@julia
+    @testset for i in eachindex(a)
+        @test a[i] < 2
+    end
+    ```
+
+    When the iteration is relatively simple, `@test_all` should be preferred for its 
+    conciseness. It avoids the need for explicit indexing, e.g. `a[i]`, conforming with 
+    Julia's intuitive broadcasting semantics.
+    
+    More importantly, all relevant information about the test failures (i.e. how many 
+    and which indices failed) are printed in a single, concise [`Test.Fail`](@extref Julia)
+    result rather than multiple, redundant messages in nested test sets.
+
 The introspection goes quite a bit deeper than what [`@test`](@extref Julia Test.@test)
 supports, handling pretty complicated expressions:
 
@@ -233,53 +267,6 @@ ommitted the summary/indexing and printed just the single failure under `Argumen
 !!! info "Disable color output"
     To disable colored subexpressions in failure messages use [`disable_failure_styling()`]
     (@ref PrettyTests.disable_failure_styling).
-
-
-!!! note "Why not `@testset` for ...?"
-    One could achieve a similar effect to `@test_all` by using the [`@testset for`]
-    (@extref Julia Test.@testset) built in to [`Test`](@extref Julia stdlib/Test). 
-    The test `@test_all a .< 2` is basically equivalent to:
-
-    ```@julia
-    @testset for i in eachindex(a)
-        @test a[i] < 2
-    end
-    ```
-
-    While this syntax is more general, in cases where either form could be used `@test_all`
-    offers some advantages:
-    - More compact syntax: obviates the need for the `@testset for` wrapper, as well as
-      explicit indexing (e.g. `a[i]`) that can be left to broadcasting semantics.
-    - More compact failure messaging: all relevant information about the indices and
-      failure modes is given in a single [`Test.Fail`](@extref Julia) result, 
-      reducing redundant messages and print-outs from nested test sets.
-    - Better readability: Deeper introspection and color-coding makes for more
-      readable messages (see above).
-
-### Broadcasting behavior
-
-Expressions that involve more complicated broadcasting behaviour are also nicely
-formatted. If the expression evaluates to a higher-dimensional array (e.g. matrix),
-individual failures are identified by their [`CartesianIndex`](@extref Julia Cartesian-indices):
-
-```@repl test_all
-@testset JustPrintTestSet begin # hide
-@test_all [1 0] .== [1 0; 0 1]
-end # hide
-
-@testset JustPrintTestSet begin # hide
-@test_all occursin.([r"a|b" "oo"], ["moo", "baa"])
-end # hide
-```
-
-`Ref` can be used to avoid broadcasting certain elements:
-
-```@repl test_all
-vals = [1,2,3];
-@testset JustPrintTestSet begin # hide
-@test_all 1:5 .∈ Ref(vals)
-end # hide
-```
 
 !!! details "Introspection mechanics"
     To create individual failure messages, the `@test_all` parser recursively dives
@@ -352,28 +339,50 @@ end # hide
     each of these into the format string creates the parts of the message that read 
     `7 == 5` and `8 == 6`.
 
+### More complicated broadcasting
+
+Expressions that involve more complicated broadcasting behaviour are naturally formatted.
+For example, if the expression evaluates to a higher-dimensional array (e.g. `BitMatrix`),
+individual failures are identified by their [`CartesianIndex`](@extref Julia Cartesian-indices):
+
+```@repl test_all
+@testset JustPrintTestSet begin # hide
+@test_all [1 0] .== [1 0; 0 1]
+end # hide
+
+@testset JustPrintTestSet begin # hide
+@test_all occursin.([r"a|b" "oo"], ["moo", "baa"])
+end # hide
+```
+
+`Ref` can be used to avoid broadcasting certain elements:
+
+```@repl test_all
+vals = [1,2,3];
+@testset JustPrintTestSet begin # hide
+@test_all 1:5 .∈ Ref(vals)
+end # hide
+```
+
 ### Keyword splicing
 
 Like [`@test`](@extref Julia Test.@test), [`@test_all`](@ref) will accept trailing keyword
-arguments that will be spliced into `ex` if it is a function call (possibly vectorized).
+arguments that will be spliced into `ex` if it is a function call (possibly `.` vectorized).
 This is primarily useful to make vectorized approximate comparisons more readable:
 
 ```@repl test_all
 v = [3, π, 4];
 @testset JustPrintTestSet begin # hide
-@test_all v .≈ 3.14 atol=0.01
+@test_all v .≈ 3.14 atol=0.15
 end # hide
 ```
-
-As shown in the `Expression:` section, the trailing keyword `atol` was added to the
-`.≈` call resulting in the test `all(.≈(v, 3.14, atol=0.01))`.
 
 Splicing works with any callable function, including if it is wrapped in a negation:
 
 ```@repl test_all
-ismod0 = (x; p=2) -> x % p == 0;
+iszero_mod(x; p=2) = x % p == 0;
 @testset JustPrintTestSet begin # hide
-@test_all .!ismod0.(1:3) p = 3
+@test_all .!iszero_mod.(1:3) p = 3
 end # hide
 ```
 
@@ -515,20 +524,20 @@ end
 Test.finish(ts::JustPrintTestSet) = nothing
 ```
 
-A core feature of `PrettyTests` is that its macros integrate seamlessly with
-Julia's standard [unit-testing framework](@extref Julia stdlib/Test). This stems primarily
-from the fact that they return one of the standard [`Test.Result`](@extref Julia) objects
-defined therein, namely:
+A core feature of `PrettyTests` is that macros integrate seamlessly with
+Julia's standard [unit-testing framework](@extref Julia stdlib/Test). They return
+one of the standard [`Test.Result`](@extref Julia) objects defined therein, namely:
 
-- [`Test.Pass`](@extref Julia) if the test expression evaluates to `true`
+- [`Test.Pass`](@extref Julia) if the test expression evaluates to `true`.
 - [`Test.Fail`](@extref Julia) if it evaluates to `false` (or `missing` in the case of
-  `@test_all`)
-- [`Test.Error`](@extref Julia) if it cannot be evaluated.
-- [`Test.Broken`](@extref Julia) if the test is marked as broken.
+  `@test_all`).
+- [`Test.Error`](@extref Julia) if the expression cannot be evaluated.
+- [`Test.Broken`](@extref Julia) if the test is marked as broken or skipped (see below).
+
 
 ### Broken/skipped tests
 
-Both macros provide support for `skip` and `broken` keywords, with similar behavior to
+They also support `skip` and `broken` keywords, with identical behavior to
 [`@test`](@extref Julia Test.@test):
 
 ```@repl integration
@@ -543,13 +552,11 @@ end #hide
 end #hide
 ```
 
-### Working with `@testset`
+### Working with test sets
 
-The macros also automatically run [`Test.record(`](@extref Julia Test.record)[`Test.get_testset()`]
-(@extref Julia Test.get_testset)[`, result)`](@extref Julia Test.record) so that they
-play nicely with both built-in and user-defined [`AbstractTestSet`]
-(@extref Julia Creating-Custom-AbstractTestSet-Types) types. In particular, they will register inside an [`@testset`]
-(@extref Julia Test.@testset):
+The macros will also [`record`](@extref Julia Test.record) the result in the test set
+returned by [`Test.get_testset()`](@extref Julia Test.get_testset). This means that they
+will play nicely with testing workflows that use [`@testset`](@extref Julia Test.@testset):
 
 ```@repl integration
 @testset "MyTestSet" begin

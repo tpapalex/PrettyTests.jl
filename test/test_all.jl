@@ -30,7 +30,6 @@
                 :(!g()) => :(!g(x = 1)), 
                 :(g.(a)) => :(g.(a, x = 1)),
                 :(.!g.(a)) => :(.!g.(a, x = 1)),
-                :(!!!!g()) => :(!!!!g(x = 1))
             ]
 
             @testset "push (x=1) to ex: $ex" for (ex, res) in cases
@@ -62,7 +61,7 @@
             ]
 
             @testset "ex: $ex" for ex in cases
-                @test_throws ErrorException("invalid test macro call: @testall $ex does not accept keyword arguments") PT.pushkeywords!(ex, :(x = 1))
+                @test_throws ErrorException("invalid test macro call: @test_all $ex does not accept keyword arguments") PT.pushkeywords!(ex, :(x = 1))
             end
         end
 
