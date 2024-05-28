@@ -5,7 +5,7 @@
 
 A Julia package that provides `@test`-like macros with more informative error messages.
 
-The inspiration comes from `python` [asserts](https://docs.python.org/3/library/unittest.html#assert-methods), which customize the error message based on the type of unit test being performed; for example, by showing the differences between two sets or lists that should be equal.
+The inspiration comes from `python` [asserts](https://docs.python.org/3/library/unittest.html#assert-methods), which customize their error message based on the type of unit test being performed; for example, by showing the differences between two sets or lists that should be equal.
 
 `PrettyTests` exports drop-in replacements for `@test` that are designed to (a) provide concise error messages tailored to specific situations, and (b) conform with the standard [`Test`](https://docs.julialang.org/en/v1/stdlib/Test/) interface so that they fit into to any unit-testing workflow.
 
@@ -18,7 +18,6 @@ pkg> add PrettyTests
 ```
 
 ## Example Usage
-
 
 ```@julia-repl
 julia> @test_all [1, 2, 3] .< 2

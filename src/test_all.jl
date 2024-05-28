@@ -28,7 +28,14 @@ const OPS_APPROX = (:.≈, :.≉)
 # Functions to preprocess expressions for `@test_all` macro.
 
 isvecoperator(x::Symbol) = Meta.isoperator(x) && first(string(x)) == '.'
-unvecoperator_string(x::Symbol) = chopprefix(string(x), ".")
+function unvecoperator_string(x::Symbol)
+    sx = string(x)
+    if startswith(sx, ".")
+        return sx[2:end]
+    else
+        return sx
+    end
+end
 
 # Used only on :call or :. args to check if args expression is displayable:
 isdisplayableargexpr(ex) = !isexpr(ex, (:kw, :parameters, :...))
